@@ -8,6 +8,7 @@ using System.Net.Sockets;
 using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
+using Runtime.TcpConnector;
 using UnityEngine;
 
 public class ROSConnection : MonoBehaviour
@@ -30,6 +31,8 @@ public class ROSConnection : MonoBehaviour
 
     const string ERROR_TOPIC_NAME = "__error";
     const string HANDSHAKE_TOPIC_NAME = "__handshake";
+    
+    private Dictionary<string, PersistentTCPConnection> persistentConnectionPublishers = new Dictionary<string, PersistentTCPConnection>();
 
     struct SubscriberCallback
     {
@@ -49,6 +52,17 @@ public class ROSConnection : MonoBehaviour
 
         SendServiceMessage<RosUnityHandshakeResponse>(HANDSHAKE_TOPIC_NAME, new RosUnityHandshakeRequest(overrideUnityIP, (ushort)unityPort), RosUnityHandshakeCallback);
     }
+
+    public PersistentTCPConnection GetPersistentPublisher(string topicName)
+    {
+        if (persistentConnectionPublishers.TryGetValue(topicName, out PersistentTCPConnection persistentTcpConnection))
+        {
+            return persistentTcpConnection;
+        }
+        PersistentTCPConnection newPersistentTcpConnection = new PersistentTCPConnection(hostName, hostPort);
+        persistentConnectionPublishers.Add(topicName, newPersistentTcpConnection);
+        return newPersistentTcpConnection;
+    } 
 
     void RosUnityHandshakeCallback(RosUnityHandshakeResponse response)
     {
@@ -267,8 +281,14 @@ public class ROSConnection : MonoBehaviour
         return messageBuffer;
     }
 
-    public async void Send(string rosTopicName, Message message)
+    public void Send(string rosTopicName, Message message)
     {
+
+        //We'll have one PersistentTCPConnection for each published topic.
+        PersistentTCPConnection persistentTcpConnection = GetPersistentPublisher(rosTopicName);
+        persistentTcpConnection.Send(rosTopicName, message);
+        
+        /*
         TcpClient client = null;
         try
         {
@@ -304,6 +324,7 @@ public class ROSConnection : MonoBehaviour
                 }
             }
         }
+        */
     }
 
     private void WriteDataStaggered(NetworkStream networkStream, string rosTopicName, Message message)
@@ -342,6 +363,7 @@ public class ROSConnection : MonoBehaviour
         // Send the message
         try
         {
+            networkStream.Write(PersistentTCPConnection._Preamble, 0, PersistentTCPConnection._Preamble.Length);
             networkStream.Write(messageBytes, 0, messageBytes.Length);
         }
         catch (Exception e)
@@ -406,5 +428,14 @@ public class ROSConnection : MonoBehaviour
         callback(serviceResponse);
         if (client.Connected)
             client.Close();
+    }
+
+    private void OnDestroy()
+    {
+        //Make sure we close all connections.
+        foreach (KeyValuePair<string,PersistentTCPConnection> persistentTcpConnectionEntry in persistentConnectionPublishers)
+        {
+            persistentTcpConnectionEntry.Value.Shutdown();
+        }
     }
 }
