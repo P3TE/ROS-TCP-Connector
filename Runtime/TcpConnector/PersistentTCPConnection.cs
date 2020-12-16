@@ -64,9 +64,10 @@ namespace Runtime.TcpConnector
             
             while (threadRunning)
             {
-                tcpClient = new TcpClient();
+                
                 try
                 {
+                    tcpClient = new TcpClient();
                     tcpClient.Connect(hostName, hostPort);
                     NetworkStream networkStream = tcpClient.GetStream();
                     networkStream.ReadTimeout = _NetworkTimeout;
@@ -94,9 +95,14 @@ namespace Runtime.TcpConnector
                         WriteDataStaggered(networkStream, topicName, message);
                     }
                 }
-                catch (Exception)
+                catch (Exception e)
                 {
-                    //Ignored.
+                    //Debug.LogWarning($"Connection failed: {e.Message}");
+                    
+                    if (threadRunning)
+                    {
+                        Thread.Sleep(100);
+                    }
                 }
                 
             }
@@ -146,6 +152,7 @@ namespace Runtime.TcpConnector
             {
                 if (tcpClient != null)
                 {
+                    Debug.Log("Closing TCP Connection...");
                     tcpClient.Close();
                 }
             }
