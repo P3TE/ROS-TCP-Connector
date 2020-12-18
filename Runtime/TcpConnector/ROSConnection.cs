@@ -13,6 +13,13 @@ using UnityEngine;
 
 public class ROSConnection : MonoBehaviour
 {
+
+    public static ROSConnection Instance
+    {
+        get;
+        private set;
+    }
+    
     // Variables required for ROS communication
     public string hostName = "192.168.1.1";
     public int hostPort = 10000;
@@ -33,6 +40,10 @@ public class ROSConnection : MonoBehaviour
     const string HANDSHAKE_TOPIC_NAME = "__handshake";
     
     private Dictionary<string, PersistentTCPConnection> persistentConnectionPublishers = new Dictionary<string, PersistentTCPConnection>();
+    private List<PersistentTCPConnection> aliveConnections = new List<PersistentTCPConnection>();
+    
+    private uint simTimeSeconds = 0;
+    private uint simTimeNanoSeconds = 0;
 
     struct SubscriberCallback
     {
@@ -41,6 +52,22 @@ public class ROSConnection : MonoBehaviour
     }
 
     Dictionary<string, SubscriberCallback> subscribers = new Dictionary<string, SubscriberCallback>();
+
+    public static RosMessageTypes.Std.Time CurrentSimTime => new RosMessageTypes.Std.Time(Instance.simTimeSeconds, Instance.simTimeNanoSeconds);
+
+    public void RegisterPersistentPublisher(PersistentTCPConnection persistentTcpConnection)
+    {
+        aliveConnections.Add(persistentTcpConnection);
+    }
+    
+    private void Awake()
+    {
+        if (Instance != null)
+        {
+            throw new Exception($"Multiple instances of a singleton found: {GetType().Name}");
+        }
+        Instance = this;
+    }
 
     void Start()
     {
@@ -51,6 +78,24 @@ public class ROSConnection : MonoBehaviour
         }
 
         SendServiceMessage<RosUnityHandshakeResponse>(HANDSHAKE_TOPIC_NAME, new RosUnityHandshakeRequest(overrideUnityIP, (ushort)unityPort), RosUnityHandshakeCallback);
+    }
+    
+    /// <summary>
+    /// Note: For this to work properly, the ROSConnection should be set higher in
+    /// the Script Execution Order.
+    /// Also a note on why it's updated every frame rather than requesting Time values when needed:
+    /// Time.time can only be run in the main thread, so this is to stop problems relating to that.
+    /// </summary>
+    private void Update()
+    {
+        UpdateSimTime();
+    }
+
+    private void UpdateSimTime()
+    {
+        float simulatedTime = UnityEngine.Time.time;
+        simTimeSeconds = (uint) Mathf.FloorToInt(simulatedTime);
+        simTimeNanoSeconds = (uint) ((simulatedTime - (double) simTimeSeconds) * 1000000000.0);
     }
 
     public PersistentTCPConnection GetPersistentPublisher(string topicName)
@@ -432,10 +477,9 @@ public class ROSConnection : MonoBehaviour
 
     private void OnDestroy()
     {
-        //Make sure we close all connections.
-        foreach (KeyValuePair<string,PersistentTCPConnection> persistentTcpConnectionEntry in persistentConnectionPublishers)
+        foreach (PersistentTCPConnection persistentTcpConnection in aliveConnections)
         {
-            persistentTcpConnectionEntry.Value.Shutdown();
+            persistentTcpConnection.Shutdown();
         }
     }
 }
