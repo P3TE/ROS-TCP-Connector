@@ -214,7 +214,7 @@ namespace RosMessageTypes.Sensor
                 offset += 8;
             }
             
-            var KArrayLength = DeserializeLength(data, offset);
+            var KArrayLength = 9;
             offset += 4;
             this.K= new double[KArrayLength];
             for(var i =0; i <KArrayLength; i++)
@@ -223,7 +223,7 @@ namespace RosMessageTypes.Sensor
                 offset += 8;
             }
             
-            var RArrayLength = DeserializeLength(data, offset);
+            var RArrayLength = 9;
             offset += 4;
             this.R= new double[RArrayLength];
             for(var i =0; i <RArrayLength; i++)
@@ -232,7 +232,7 @@ namespace RosMessageTypes.Sensor
                 offset += 8;
             }
             
-            var PArrayLength = DeserializeLength(data, offset);
+            var PArrayLength = 12;
             offset += 4;
             this.P= new double[PArrayLength];
             for(var i =0; i <PArrayLength; i++)

@@ -34,7 +34,7 @@ namespace RosMessageTypes.Geometry
             var listOfSerializations = new List<byte[]>();
             listOfSerializations.AddRange(pose.SerializationStatements());
             
-            listOfSerializations.Add(BitConverter.GetBytes(covariance.Length));
+            //listOfSerializations.Add(BitConverter.GetBytes(covariance.Length));
             foreach(var entry in covariance)
                 listOfSerializations.Add(BitConverter.GetBytes(entry));
 
@@ -45,8 +45,8 @@ namespace RosMessageTypes.Geometry
         {
             offset = this.pose.Deserialize(data, offset);
             
-            var covarianceArrayLength = DeserializeLength(data, offset);
-            offset += 4;
+            var covarianceArrayLength = 36;
+            //offset += 4;
             this.covariance= new double[covarianceArrayLength];
             for(var i =0; i <covarianceArrayLength; i++)
             {
