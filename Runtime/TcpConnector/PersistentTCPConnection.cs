@@ -144,7 +144,6 @@ namespace Runtime.TcpConnector
         protected virtual void PrepareDataToSend()
         {
             AppendBuildDataToTransmitBuffer(rosTopicName, messageToSend);
-            AppendBuildDataToTransmitBuffer(rosTopicName, messageToSend);
         }
 
         protected void AppendBuildDataToTransmitBuffer(string topicName, Message message)
