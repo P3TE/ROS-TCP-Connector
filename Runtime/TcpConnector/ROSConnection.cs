@@ -1,8 +1,9 @@
 using RosMessageGeneration;
-using RosMessageTypes.TcpEndpoint;
+using RosMessageTypes.RosTcpEndpoint;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
@@ -37,6 +38,7 @@ public class ROSConnection : MonoBehaviour
     static List<Task> activeConnectionTasks = new List<Task>(); // pending connections
 
     const string ERROR_TOPIC_NAME = "__error";
+    const string SYSCOMMAND_TOPIC_NAME = "__syscommand";
     const string HANDSHAKE_TOPIC_NAME = "__handshake";
     
     private Dictionary<string, PersistentTCPConnection> persistentConnectionPublishers = new Dictionary<string, PersistentTCPConnection>();
@@ -44,6 +46,11 @@ public class ROSConnection : MonoBehaviour
     
     private uint simTimeSeconds = 0;
     private uint simTimeNanoSeconds = 0;
+    
+    private TcpListener tcpListener;
+
+    const string SYSCOMMAND_SUBSCRIBE = "subscribe";
+    const string SYSCOMMAND_PUBLISH = "publish";
 
     struct SubscriberCallback
     {
@@ -52,9 +59,10 @@ public class ROSConnection : MonoBehaviour
     }
 
     Dictionary<string, SubscriberCallback> subscribers = new Dictionary<string, SubscriberCallback>();
-
+    HashSet<string> publishers = new HashSet<string>();
+    
     public static RosMessageTypes.Std.Time CurrentSimTime => new RosMessageTypes.Std.Time(Instance.simTimeSeconds, Instance.simTimeNanoSeconds);
-
+    
     public void RegisterPersistentPublisher(PersistentTCPConnection persistentTcpConnection)
     {
         aliveConnections.Add(persistentTcpConnection);
@@ -67,19 +75,27 @@ public class ROSConnection : MonoBehaviour
             throw new Exception($"Multiple instances of a singleton found: {GetType().Name}");
         }
         Instance = this;
-    }
-
-    void Start()
-    {
+        
         Subscribe<RosUnityError>(ERROR_TOPIC_NAME, RosUnityErrorCallback);
+
         if (overrideUnityIP != "")
         {
             StartMessageServer(overrideUnityIP, unityPort); // no reason to wait, if we already know the IP
         }
 
-        SendServiceMessage<RosUnityHandshakeResponse>(HANDSHAKE_TOPIC_NAME, new RosUnityHandshakeRequest(overrideUnityIP, (ushort)unityPort), RosUnityHandshakeCallback);
+        SendServiceMessage<UnityHandshakeResponse>(HANDSHAKE_TOPIC_NAME, new UnityHandshakeRequest(overrideUnityIP, (ushort)unityPort), RosUnityHandshakeCallback);
     }
-    
+
+    void RosUnityHandshakeCallback(RosUnityHandshakeResponse response)
+    {
+        StartMessageServer(response.ip, unityPort);
+    }
+
+    void RosUnityErrorCallback(RosUnityError error)
+    {
+        Debug.LogError("ROS-Unity error: " + error.message);
+    }
+
     /// <summary>
     /// Note: For this to work properly, the ROSConnection should be set higher in
     /// the Script Execution Order.
@@ -108,17 +124,7 @@ public class ROSConnection : MonoBehaviour
         persistentConnectionPublishers.Add(topicName, newPersistentTcpConnection);
         return newPersistentTcpConnection;
     } 
-
-    void RosUnityHandshakeCallback(RosUnityHandshakeResponse response)
-    {
-        StartMessageServer(response.ip, unityPort);
-    }
-
-    void RosUnityErrorCallback(RosUnityError error)
-    {
-        Debug.LogError("ROS-Unity error: " + error.message);
-    }
-
+    
     public void Subscribe<T>(string topic, Action<T> callback) where T : Message, new()
     {
         SubscriberCallback subCallbacks;
@@ -133,6 +139,121 @@ public class ROSConnection : MonoBehaviour
         }
 
         subCallbacks.callbacks.Add((Message msg) => { callback((T)msg); });
+    }
+
+    public async void SendServiceMessage<RESPONSE>(string rosServiceName, Message serviceRequest, Action<RESPONSE> callback) where RESPONSE : Message, new()
+    {
+        // Serialize the message in service name, message size, and message bytes format
+        byte[] messageBytes = GetMessageBytes(rosServiceName, serviceRequest);
+
+        TcpClient client = new TcpClient();
+        await client.ConnectAsync(hostName, hostPort);
+
+        NetworkStream networkStream = client.GetStream();
+        networkStream.ReadTimeout = networkTimeout;
+
+        RESPONSE serviceResponse = new RESPONSE();
+
+        // Send the message
+        try
+        {
+            networkStream.Write(messageBytes, 0, messageBytes.Length);
+        }
+        catch (Exception e)
+        {
+            Debug.LogError("SocketException: " + e);
+            goto finish;
+        }
+
+        if (!networkStream.CanRead)
+        {
+            Debug.LogError("Sorry, you cannot read from this NetworkStream.");
+            goto finish;
+        }
+
+        // Poll every 1 second(s) for available data on the stream
+        int attempts = 0;
+        while (!networkStream.DataAvailable && attempts <= this.awaitDataMaxRetries)
+        {
+            if (attempts == this.awaitDataMaxRetries)
+            {
+                Debug.LogError("No data available on network stream after " + awaitDataMaxRetries + " attempts.");
+                goto finish;
+            }
+            attempts++;
+            await Task.Delay((int)(awaitDataSleepSeconds * 1000));
+        }
+
+        int numberOfBytesRead = 0;
+        try
+        {
+            // Get first bytes to determine length of service name
+            byte[] rawServiceBytes = new byte[4];
+            networkStream.Read(rawServiceBytes, 0, rawServiceBytes.Length);
+            int topicLength = BitConverter.ToInt32(rawServiceBytes, 0);
+
+            // Create container and read service name from network stream
+            byte[] serviceNameBytes = new byte[topicLength];
+            networkStream.Read(serviceNameBytes, 0, serviceNameBytes.Length);
+            string serviceName = Encoding.ASCII.GetString(serviceNameBytes, 0, topicLength);
+
+            // Get leading bytes to determine length of remaining full message
+            byte[] full_message_size_bytes = new byte[4];
+            networkStream.Read(full_message_size_bytes, 0, full_message_size_bytes.Length);
+            int full_message_size = BitConverter.ToInt32(full_message_size_bytes, 0);
+
+            // Create container and read message from network stream
+            byte[] readBuffer = new byte[full_message_size];
+            while (networkStream.DataAvailable && numberOfBytesRead < full_message_size)
+            {
+                var readBytes = networkStream.Read(readBuffer, 0, readBuffer.Length);
+                numberOfBytesRead += readBytes;
+            }
+
+            serviceResponse.Deserialize(readBuffer, 0);
+        }
+        catch (Exception e)
+        {
+            Debug.LogError("Exception raised!! " + e);
+        }
+
+        finish:
+        callback(serviceResponse);
+        if (client.Connected)
+            client.Close();
+    }
+
+    public void RegisterSubscriber(string topic, string rosMessageName)
+    {
+        SendSysCommand(SYSCOMMAND_SUBSCRIBE, new SysCommand_Subscribe { topic = topic, message_name = rosMessageName });
+    }
+
+    public void RegisterPublisher(string topic, string rosMessageName)
+    {
+        SendSysCommand(SYSCOMMAND_PUBLISH, new SysCommand_Publish { topic = topic, message_name = rosMessageName });
+    }
+
+
+    void Awake()
+    {
+        Subscribe<RosUnityError>(ERROR_TOPIC_NAME, RosUnityErrorCallback);
+
+        if (overrideUnityIP != "")
+        {
+            StartMessageServer(overrideUnityIP, unityPort); // no reason to wait, if we already know the IP
+        }
+
+        SendServiceMessage<UnityHandshakeResponse>(HANDSHAKE_TOPIC_NAME, new UnityHandshakeRequest(overrideUnityIP, (ushort)unityPort), RosUnityHandshakeCallback);
+    }
+
+    void RosUnityHandshakeCallback(UnityHandshakeResponse response)
+    {
+        StartMessageServer(response.ip, unityPort);
+    }
+
+    void RosUnityErrorCallback(RosUnityError error)
+    {
+        Debug.LogError("ROS-Unity error: " + error.message);
     }
 
     /// <summary>
@@ -236,7 +357,6 @@ public class ROSConnection : MonoBehaviour
         alreadyStartedServer = true;
         while (true)
         {
-            TcpListener tcpListener;
             try
             {
                 tcpListener = new TcpListener(IPAddress.Parse(ip), port);
@@ -248,7 +368,7 @@ public class ROSConnection : MonoBehaviour
                 return;
             }
 
-            Debug.Log("ROS-Unity server listening on " + ip + ":" + port);
+                Debug.Log("ROS-Unity server listening on " + ip + ":" + port);
 
             try
             {
@@ -260,6 +380,28 @@ public class ROSConnection : MonoBehaviour
                     // if already faulted, re-throw any error on the calling context
                     if (task.IsFaulted)
                         await task;
+
+                    // try to get through the message queue before doing another await
+                    // but if messages are arriving faster than we can process them, don't freeze up
+                    float abortAtRealtime = Time.realtimeSinceStartup + 0.1f;
+                    while (tcpListener.Pending() && Time.realtimeSinceStartup < abortAtRealtime)
+                    {
+                        tcpClient = tcpListener.AcceptTcpClient();
+                        task = StartHandleConnectionAsync(tcpClient);
+                        if (task.IsFaulted)
+                            await task;
+                    }
+                }
+            }
+            catch (ObjectDisposedException e)
+            {
+                if (tcpListener == null)
+                {
+                    // we're shutting down, that's fine
+                }
+                else
+                {
+                    Debug.LogError("Exception raised!! " + e);
                 }
             }
             catch (Exception e)
@@ -309,7 +451,7 @@ public class ROSConnection : MonoBehaviour
     /// 		last N bytes determined from previous four bytes: ROS Message variables
     /// </summary>
     /// <param name="topicServiceName"></param> The ROS topic or service name that is receiving the messsage
-    /// <param name="messsage"></param> The ROS message to send to a ROS publisher or service
+    /// <param name="message"></param> The ROS message to send to a ROS publisher or service
     /// <returns> byte array with serialized ROS message in appropriate format</returns>
     public byte[] GetMessageBytes(string topicServiceName, Message message)
     {
@@ -326,6 +468,23 @@ public class ROSConnection : MonoBehaviour
         return messageBuffer;
     }
 
+    struct SysCommand_Subscribe
+    {
+        public string topic;
+        public string message_name;
+    }
+
+    struct SysCommand_Publish
+    {
+        public string topic;
+        public string message_name;
+    }
+
+    void SendSysCommand(string command, object param)
+    {
+        Send(SYSCOMMAND_TOPIC_NAME, new RosUnitySysCommand(command, JsonUtility.ToJson(param)));
+    }
+    
     public void Send(string rosTopicName, Message message)
     {
 
@@ -481,5 +640,8 @@ public class ROSConnection : MonoBehaviour
         {
             persistentTcpConnection.Shutdown();
         }
+        if (tcpListener != null)
+            tcpListener.Stop();
+        tcpListener = null;
     }
 }

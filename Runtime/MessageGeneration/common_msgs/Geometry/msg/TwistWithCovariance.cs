@@ -34,7 +34,7 @@ namespace RosMessageTypes.Geometry
             var listOfSerializations = new List<byte[]>();
             listOfSerializations.AddRange(twist.SerializationStatements());
             
-            //listOfSerializations.Add(BitConverter.GetBytes(covariance.Length));
+            Array.Resize(ref covariance, 36);
             foreach(var entry in covariance)
                 listOfSerializations.Add(BitConverter.GetBytes(entry));
 
@@ -44,11 +44,9 @@ namespace RosMessageTypes.Geometry
         public override int Deserialize(byte[] data, int offset)
         {
             offset = this.twist.Deserialize(data, offset);
-
-            var covarianceArrayLength = 36;
-            //offset += 4;
-            this.covariance= new double[covarianceArrayLength];
-            for(var i =0; i <covarianceArrayLength; i++)
+            
+            this.covariance= new double[36];
+            for(var i = 0; i < 36; i++)
             {
                 this.covariance[i] = BitConverter.ToDouble(data, offset);
                 offset += 8;
