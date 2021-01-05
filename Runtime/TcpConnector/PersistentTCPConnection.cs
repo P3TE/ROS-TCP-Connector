@@ -183,7 +183,10 @@ namespace Runtime.TcpConnector
             {
                 //Increase the size.
                 int newSize = Mathf.NextPowerOfTwo(requiredSize);
-                transmitBuffer = new byte[newSize];
+                byte[] newBuffer = new byte[newSize];
+                //Copy the old data across.
+                System.Buffer.BlockCopy(transmitBuffer, 0, newBuffer, 0, transmitBuffer.Length);
+                transmitBuffer = newBuffer;
             }
         }
 

@@ -143,8 +143,6 @@ public class ROSConnection : MonoBehaviour
 
     public async void SendServiceMessage<RESPONSE>(string rosServiceName, Message serviceRequest, Action<RESPONSE> callback) where RESPONSE : Message, new()
     {
-        // Serialize the message in service name, message size, and message bytes format
-        byte[] messageBytes = GetMessageBytes(rosServiceName, serviceRequest);
 
         TcpClient client = new TcpClient();
         await client.ConnectAsync(hostName, hostPort);
@@ -157,7 +155,7 @@ public class ROSConnection : MonoBehaviour
         // Send the message
         try
         {
-            networkStream.Write(messageBytes, 0, messageBytes.Length);
+            WriteDataStaggered(networkStream, rosServiceName, serviceRequest);
         }
         catch (Exception e)
         {
@@ -404,17 +402,21 @@ public class ROSConnection : MonoBehaviour
     /// <param name="fullMessageSizeBytes"></param> The full size of the already serialized message in bytes
     /// <param name="messageToSend"></param> The serialized ROS message to send to ROS network
     /// <returns></returns>
-    public int GetPrefixBytes(int offset, byte[] serviceName, byte[] fullMessageSizeBytes, byte[] messagBuffer)
+    public void GetPrefixBytes(ref int offset, byte[] serviceName, byte[] fullMessageSizeBytes, byte[] messageBuffer)
     {
-        // Service Name bytes
-        System.Buffer.BlockCopy(serviceName, 0, messagBuffer, 0, serviceName.Length);
-        offset += serviceName.Length;
+        AppendBytesToBuffer(ref offset, messageBuffer, PersistentTCPConnection._Preamble);
+        AppendBytesToBuffer(ref offset, messageBuffer, serviceName);
+        AppendBytesToBuffer(ref offset, messageBuffer, fullMessageSizeBytes);
+    }
 
-        // Full Message size bytes
-        System.Buffer.BlockCopy(fullMessageSizeBytes, 0, messagBuffer, offset, fullMessageSizeBytes.Length);
-        offset += fullMessageSizeBytes.Length;
-
-        return offset;
+    public void AppendBytesToBuffer(ref int offset, byte[] messageBuffer, byte[] bytesToAppend, int messageLength = -1)
+    {
+        if (messageLength == -1)
+        {
+            messageLength = bytesToAppend.Length;
+        }
+        System.Buffer.BlockCopy(bytesToAppend, 0, messageBuffer, offset, messageLength);
+        offset += messageLength;
     }
 
     /// <summary>
@@ -430,17 +432,20 @@ public class ROSConnection : MonoBehaviour
     /// <param name="topicServiceName"></param> The ROS topic or service name that is receiving the messsage
     /// <param name="message"></param> The ROS message to send to a ROS publisher or service
     /// <returns> byte array with serialized ROS message in appropriate format</returns>
+    [Obsolete("Use WriteDataStaggered instead")]
     public byte[] GetMessageBytes(string topicServiceName, Message message)
     {
+        
         byte[] topicName = message.SerializeString(topicServiceName);
         byte[] bytesMsg = message.Serialize();
         byte[] fullMessageSizeBytes = BitConverter.GetBytes(bytesMsg.Length);
 
-        byte[] messageBuffer = new byte[topicName.Length + fullMessageSizeBytes.Length + bytesMsg.Length];
-        // Copy topic name and message size in bytes to message buffer
-        int offset = GetPrefixBytes(0, topicName, fullMessageSizeBytes, messageBuffer);
+        byte[] messageBuffer = new byte[PersistentTCPConnection._Preamble.Length + topicName.Length + fullMessageSizeBytes.Length + bytesMsg.Length];
+        // Copy preamble, topic name and message size in bytes to message buffer
+        int offset = 0;
+        GetPrefixBytes(ref offset, topicName, fullMessageSizeBytes, messageBuffer);
         // ROS message bytes
-        System.Buffer.BlockCopy(bytesMsg, 0, messageBuffer, offset, bytesMsg.Length);
+        AppendBytesToBuffer(ref offset, messageBuffer, bytesMsg);
 
         return messageBuffer;
     }
@@ -464,7 +469,6 @@ public class ROSConnection : MonoBehaviour
     
     public void Send(string rosTopicName, Message message)
     {
-
         //We'll have one PersistentTCPConnection for each published topic.
         PersistentTCPConnection persistentTcpConnection = GetPersistentPublisher(rosTopicName);
         persistentTcpConnection.Send(rosTopicName, message);
@@ -510,6 +514,9 @@ public class ROSConnection : MonoBehaviour
 
     private void WriteDataStaggered(NetworkStream networkStream, string rosTopicName, Message message)
     {
+        
+        networkStream.Write(PersistentTCPConnection._Preamble, 0, PersistentTCPConnection._Preamble.Length);
+        
         byte[] topicName = message.SerializeString(rosTopicName);
         List<byte[]> segments = message.SerializationStatements();
         int messageLength = 0;
@@ -526,6 +533,8 @@ public class ROSConnection : MonoBehaviour
             byte[] segmentData = segments[i];
             networkStream.Write(segmentData, 0, segmentData.Length);
         }
+        
+        networkStream.Flush();
     }
 
     private void OnDestroy()
