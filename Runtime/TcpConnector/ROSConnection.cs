@@ -88,6 +88,7 @@ public class ROSConnection : MonoBehaviour
 
     void RosUnityHandshakeCallback(UnityHandshakeResponse response)
     {
+        Debug.Log($"Handshake response received, ip: {response.ip}");
         StartMessageServer(response.ip, unityPort);
     }
 
@@ -271,12 +272,13 @@ public class ROSConnection : MonoBehaviour
 
                 byte[] readBuffer = new byte[full_message_size];
                 int numberOfBytesRead = 0;
-
-                while (networkStream.DataAvailable && numberOfBytesRead < full_message_size)
+                int bytesRemaining = full_message_size;
+                while (networkStream.DataAvailable && bytesRemaining > 0)
                 {
-                    int bytesRead = networkStream.Read(readBuffer, 0, readBuffer.Length);
+                    int bytesRead = networkStream.Read(readBuffer, numberOfBytesRead, bytesRemaining);
                     offset += bytesRead;
                     numberOfBytesRead += bytesRead;
+                    bytesRemaining -= bytesRead;
                 }
 
                 SubscriberCallback subs;
@@ -286,7 +288,16 @@ public class ROSConnection : MonoBehaviour
                     msg.Deserialize(readBuffer, 0);
                     foreach (Action<Message> callback in subs.callbacks)
                     {
-                        callback(msg);
+                        try
+                        {
+                            callback(msg);
+                        }
+                        catch (Exception e)
+                        {
+                            Debug.LogError("Fatal error found and caught, " +
+                                           "continuing so that other subscribers will still work, but this should be fixed! Error:");
+                            Debug.LogError(e);
+                        }
                     }
                 }
             }
