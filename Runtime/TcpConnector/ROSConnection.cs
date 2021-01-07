@@ -287,6 +287,11 @@ public class ROSConnection : MonoBehaviour
                 {
                     Message msg = (Message)subs.messageConstructor.Invoke(new object[0]);
                     msg.Deserialize(readBuffer, 0);
+                    if (!Application.isPlaying)
+                    {
+                        Debug.LogWarning("Message received when the application was not playing, ignoring...");
+                        return;
+                    }
                     foreach (Action<Message> callback in subs.callbacks)
                     {
                         try
