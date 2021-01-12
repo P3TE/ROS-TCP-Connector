@@ -28,6 +28,7 @@ public class ROSConnection : MonoBehaviour
     public string overrideUnityIP = "";
     public int unityPort = 5005;
     bool alreadyStartedServer = false;
+    private bool _unityServerReady = false;
 
     private int networkTimeout = 2000;
 
@@ -95,6 +96,18 @@ public class ROSConnection : MonoBehaviour
     void RosUnityErrorCallback(RosUnityError error)
     {
         Debug.LogError("ROS-Unity error: " + error.message);
+    }
+
+    public bool UnityServerReady
+    {
+        get
+        {
+            return _unityServerReady;
+        }
+        set
+        {
+            _unityServerReady = value;
+        }
     }
 
     /// <summary>
@@ -353,6 +366,7 @@ public class ROSConnection : MonoBehaviour
             {
                 tcpListener = new TcpListener(IPAddress.Parse(ip), port);
                 tcpListener.Start();
+                UnityServerReady = true;
             }
             catch (Exception e)
             {
