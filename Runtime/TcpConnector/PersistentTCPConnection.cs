@@ -77,6 +77,12 @@ namespace Runtime.TcpConnector
                     
                     while (threadRunning)
                     {
+                        if (!ROSConnection.Instance.UnityServerReady)
+                        {
+                            //Wait until the server is ready...
+                            Thread.Sleep(10);
+                            continue;
+                        }
                         //Wait for more data to send.
                         newSendDataReadyEvent.WaitOne();
                         if (!threadRunning)
@@ -85,7 +91,6 @@ namespace Runtime.TcpConnector
                             break;
                         }
 
-                        
                         lock (messageSendLock)
                         {
                             //Grab the latest data.
@@ -132,6 +137,7 @@ namespace Runtime.TcpConnector
 
                     if (threadRunning)
                     {
+                        ROSConnection.Instance.RequestCheckConnection();
                         Thread.Sleep(100);
                     }
                 }

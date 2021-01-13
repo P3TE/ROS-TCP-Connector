@@ -28,7 +28,10 @@ public class ROSConnection : MonoBehaviour
     public string overrideUnityIP = "";
     public int unityPort = 5005;
     bool alreadyStartedServer = false;
-    private bool _unityServerReady = false;
+    private volatile bool _unityServerReady = false;
+    private bool unityHandshakeInProgress = false;
+    private volatile bool shouldCheckConnection = false;
+    private bool checkingConnection = false;
 
     private int networkTimeout = 2000;
 
@@ -83,8 +86,12 @@ public class ROSConnection : MonoBehaviour
         {
             StartMessageServer(overrideUnityIP, unityPort); // no reason to wait, if we already know the IP
         }
-        
-        SendServiceMessage<UnityHandshakeResponse>(HANDSHAKE_TOPIC_NAME, new UnityHandshakeRequest(overrideUnityIP, (ushort)unityPort), RosUnityHandshakeCallback);
+        else
+        {
+            //We'll handshake to verify a connection with the server.
+            Debug.Log($"Attempting handshake with ROS TCP connector at: {hostName}:{hostPort}");
+            unityHandshakeInProgress = false;
+        }
     }
 
     void RosUnityHandshakeCallback(UnityHandshakeResponse response)
@@ -118,7 +125,75 @@ public class ROSConnection : MonoBehaviour
     /// </summary>
     private void Update()
     {
+        ConnectToBridgeIfApplicable();
         UpdateSimTime();
+        CheckConnectionIfApplicable();
+    }
+
+    private void ConnectToBridgeIfApplicable()
+    {
+        if (!UnityServerReady)
+        {
+            if (!unityHandshakeInProgress)
+            {
+                unityHandshakeInProgress = true;
+                SendServiceMessage<UnityHandshakeResponse>(HANDSHAKE_TOPIC_NAME, 
+                    new UnityHandshakeRequest(overrideUnityIP, (ushort)unityPort), 
+                    RosUnityHandshakeCallback, OnRosUnityHandshakeFailed);    
+            }
+        }
+    }
+
+    public void RequestCheckConnection()
+    {
+        shouldCheckConnection = true;
+    }
+
+    private void CheckConnectionIfApplicable()
+    {
+        if (shouldCheckConnection)
+        {
+            if (!checkingConnection)
+            {
+                Debug.Log("Checking connection status...");
+                checkingConnection = true;
+                SendServiceMessage<UnityHandshakeResponse>(HANDSHAKE_TOPIC_NAME, 
+                    new UnityHandshakeRequest(overrideUnityIP, (ushort)unityPort), 
+                    RosUnityCheckConnectionHandshakeCallback, OnRosUnityCheckConnectionHandshakeCallbackFailed);   
+            }
+        }
+    }
+    
+    
+    private void RosUnityCheckConnectionHandshakeCallback(UnityHandshakeResponse obj)
+    {
+        //Do nothing.
+        Debug.Log("Connection status ok.");
+        checkingConnection = false;
+        shouldCheckConnection = false;
+    }
+
+    private void OnRosUnityCheckConnectionHandshakeCallbackFailed(Exception obj)
+    {
+        Debug.Log("ROS TCP connector connection failure detected, restarting server.");
+        checkingConnection = false;
+        shouldCheckConnection = false;
+        UnityServerReady = false;
+        unityHandshakeInProgress = false;
+        alreadyStartedServer = false;
+        try
+        {
+            tcpListener?.Stop();
+        }
+        catch (Exception e)
+        {
+            Debug.LogError(e);
+        }
+    }
+
+    private void OnRosUnityHandshakeFailed(Exception obj)
+    {
+        unityHandshakeInProgress = false;
     }
 
     private void UpdateSimTime()
@@ -154,10 +229,96 @@ public class ROSConnection : MonoBehaviour
 
         subCallbacks.callbacks.Add((Message msg) => { callback((T)msg); });
     }
-
-    public async void SendServiceMessage<RESPONSE>(string rosServiceName, Message serviceRequest, Action<RESPONSE> callback) where RESPONSE : Message, new()
+    
+    public async void SendServiceMessage<RESPONSE>(string rosServiceName, Message serviceRequest, 
+            Action<RESPONSE> callback,
+            Action<Exception> serviceFailedCallback = null
+        ) where RESPONSE : Message, new()
     {
 
+        
+        RESPONSE serviceResponse = new RESPONSE();
+        bool serviceResponseSuccessful;
+        Exception correspondingError = null;
+        TcpClient client = new TcpClient();
+        
+        try
+        {
+            
+            await client.ConnectAsync(hostName, hostPort);
+
+            NetworkStream networkStream = client.GetStream();
+            networkStream.ReadTimeout = networkTimeout;
+
+            WriteDataStaggered(networkStream, rosServiceName, serviceRequest);
+
+            if (!networkStream.CanRead)
+            {
+                throw new Exception("Unable to read from NetworkStream.");
+            }
+
+            // Poll every 1 second(s) for available data on the stream
+            int attempts = 0;
+            while (!networkStream.DataAvailable && attempts <= this.awaitDataMaxRetries)
+            {
+                if (attempts == this.awaitDataMaxRetries)
+                {
+                    Debug.LogError("No data available on network stream after " + awaitDataMaxRetries + " attempts.");
+                }
+
+                attempts++;
+                await Task.Delay((int) (awaitDataSleepSeconds * 1000));
+            }
+
+            if (ReadMessageData(networkStream, out string serviceName, out byte[] readBuffer))
+            {
+                // TODO: consider using the serviceName to confirm proper received location
+                serviceResponse.Deserialize(readBuffer, 0);
+            }
+
+            serviceResponseSuccessful = true;
+        }
+        catch (Exception e)
+        {
+            serviceResponseSuccessful = false;
+            correspondingError = e;
+        }
+        finally
+        {
+            //Try and close the clint connection if applicable.
+            try
+            {
+                if (client.Connected)
+                {
+                    client.Close();
+                }
+            }
+            catch (Exception)
+            {
+                //Ignored.
+            }
+        }
+
+        try
+        {
+            if (serviceResponseSuccessful || serviceFailedCallback == null)
+            {
+                callback(serviceResponse);
+            }
+            else
+            {
+                serviceFailedCallback(correspondingError);
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.LogError("Unhandled internal exception! " + e);
+        }
+        
+        
+        //------------------------------
+        //Old:
+/*
         TcpClient client = new TcpClient();
         await client.ConnectAsync(hostName, hostPort);
 
@@ -213,6 +374,7 @@ public class ROSConnection : MonoBehaviour
         callback(serviceResponse);
         if (client.Connected)
             client.Close();
+            */
     }
 
     public void RegisterSubscriber(string topic, string rosMessageName)
