@@ -151,7 +151,7 @@ public class ROSConnection : MonoBehaviour
 
     private void CheckConnectionIfApplicable()
     {
-        if (shouldCheckConnection)
+        if (UnityServerReady && shouldCheckConnection)
         {
             if (!checkingConnection)
             {
@@ -263,20 +263,20 @@ public class ROSConnection : MonoBehaviour
             {
                 if (attempts == this.awaitDataMaxRetries)
                 {
-                    Debug.LogError("No data available on network stream after " + awaitDataMaxRetries + " attempts.");
+                    Debug.LogError($"No data available on network stream after {awaitDataMaxRetries} attempts. ({(awaitDataMaxRetries * awaitDataSleepSeconds)} seconds)");
                 }
 
                 attempts++;
                 await Task.Delay((int) (awaitDataSleepSeconds * 1000));
             }
 
-            if (ReadMessageData(networkStream, out string serviceName, out byte[] readBuffer))
+            serviceResponseSuccessful = attempts <= this.awaitDataMaxRetries;
+            
+            if (serviceResponseSuccessful && ReadMessageData(networkStream, out string serviceName, out byte[] readBuffer))
             {
                 // TODO: consider using the serviceName to confirm proper received location
                 serviceResponse.Deserialize(readBuffer, 0);
             }
-
-            serviceResponseSuccessful = true;
         }
         catch (Exception e)
         {
@@ -563,12 +563,13 @@ public class ROSConnection : MonoBehaviour
             }
             catch (ObjectDisposedException e)
             {
-                if (tcpListener == null)
+                if (!alreadyStartedServer || tcpListener == null)
                 {
-                    // we're shutting down, that's fine
-                }
-                else
+                    // we're shutting down this server, that's fine
+                    break;
+                } else
                 {
+                    //Something went wrong, attempt to restart the server.
                     Debug.LogError("Exception raised!! " + e);
                 }
             }
