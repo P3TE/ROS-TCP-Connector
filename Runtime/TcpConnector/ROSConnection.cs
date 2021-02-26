@@ -544,6 +544,20 @@ public class ROSConnection : MonoBehaviour
                 {
                     var tcpClient = await tcpListener.AcceptTcpClientAsync();
 
+                    if (!Application.isPlaying)
+                    {
+                        try
+                        {
+                            tcpListener?.Stop();
+                        } catch(Exception) {}
+                        try
+                        {
+                            tcpClient?.Close();
+                        } catch(Exception) {}
+
+                        return;
+                    }
+
                     var task = StartHandleConnectionAsync(tcpClient);
                     // if already faulted, re-throw any error on the calling context
                     if (task.IsFaulted)
