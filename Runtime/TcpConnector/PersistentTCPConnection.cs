@@ -115,9 +115,8 @@ namespace Runtime.TcpConnector
                         
                     }
                 }
-                catch
+                catch(Exception e)
                 {
-                    //Debug.LogWarning($"Connection failed: {e.Message}");
 
                     createNewTcpClient = true;
                     if (tcpClient != null)
@@ -137,6 +136,7 @@ namespace Runtime.TcpConnector
 
                     if (threadRunning)
                     {
+                        //Debug.LogWarning($"Connection failed for topic '{rosTopicName}': {e.Message}");
                         ROSConnection.Instance.RequestCheckConnection();
                         Thread.Sleep(100);
                     }
@@ -213,7 +213,10 @@ namespace Runtime.TcpConnector
             {
                 if (tcpClient != null)
                 {
-                    Debug.Log("Closing TCP Connection...");
+                    if (ROSConnection.ReportServerErrors)
+                    {
+                        Debug.Log("Closing TCP Connection...");
+                    }
                     tcpClient.Close();
                 }
             }

@@ -47,6 +47,7 @@ public class ROSConnection : MonoBehaviour
     
     private Dictionary<string, PersistentTCPConnection> persistentConnectionPublishers = new Dictionary<string, PersistentTCPConnection>();
     private List<PersistentTCPConnection> aliveConnections = new List<PersistentTCPConnection>();
+    private LinkedList<PersistentTCPSubscriber> persistentTcpSubscribers = new LinkedList<PersistentTCPSubscriber>();
     
     private uint simTimeSeconds = 0;
     private uint simTimeNanoSeconds = 0;
@@ -55,6 +56,8 @@ public class ROSConnection : MonoBehaviour
 
     const string SYSCOMMAND_SUBSCRIBE = "subscribe";
     const string SYSCOMMAND_PUBLISH = "publish";
+
+    private bool applicationClosing = false;
 
     struct SubscriberCallback
     {
@@ -74,6 +77,7 @@ public class ROSConnection : MonoBehaviour
     
     private void Awake()
     {
+        applicationClosing = false;
         if (Instance != null)
         {
             throw new Exception($"Multiple instances of a singleton found: {GetType().Name}");
@@ -128,6 +132,64 @@ public class ROSConnection : MonoBehaviour
         ConnectToBridgeIfApplicable();
         UpdateSimTime();
         CheckConnectionIfApplicable();
+        UpdateSubscribers();
+    }
+
+    private void UpdateSubscribers()
+    {
+        LinkedListNode<PersistentTCPSubscriber> persistentTcpSubscriberNode = persistentTcpSubscribers.First;
+        while (persistentTcpSubscriberNode != null)
+        {
+            LinkedListNode<PersistentTCPSubscriber> nextNode = persistentTcpSubscriberNode.Next;
+            PersistentTCPSubscriber persistentTcpSubscriber = persistentTcpSubscriberNode.Value;
+            
+            try
+            {
+                while (persistentTcpSubscriber.receivedQueue.TryDequeue(out ReceivedMessageInfo receivedMessageInfo))
+                {
+                    HandleReceivedMessage(receivedMessageInfo);
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogError("Failed to parse received message!");
+                Debug.LogException(e);
+            }
+            
+            if (!persistentTcpSubscriber.ThreadRunning)
+            {
+                persistentTcpSubscribers.Remove(persistentTcpSubscriberNode);
+            }
+            
+            persistentTcpSubscriberNode = nextNode;
+        }
+    }
+
+    private void HandleReceivedMessage(ReceivedMessageInfo receivedMessageInfo)
+    {
+        if (subscribers.TryGetValue(receivedMessageInfo.topicName, out SubscriberCallback subs))
+        {
+            Message msg = (Message)subs.messageConstructor.Invoke(new object[0]);
+            msg.Deserialize(receivedMessageInfo.readBuffer, 0);
+            if (!Application.isPlaying)
+            {
+                Debug.LogWarning("Message received when the application was not playing, ignoring...");
+                return;
+            }
+            foreach (Action<Message> callback in subs.callbacks)
+            {
+                try
+                {
+                    callback(msg);
+                }
+                catch (Exception e)
+                {
+                    Debug.LogError("Fatal error found and caught, " +
+                                   "continuing so that other subscribers will still work, but this should be fixed! Error:");
+                    Debug.LogError(e);
+                }
+            }
+        }
     }
 
     private void ConnectToBridgeIfApplicable()
@@ -387,19 +449,7 @@ public class ROSConnection : MonoBehaviour
         SendSysCommand(SYSCOMMAND_PUBLISH, new SysCommand_Publish { topic = topic, message_name = rosMessageName });
     }
 
-    /// <summary>
-    /// 	Function is meant to be overridden by inheriting classes to specify how to handle read messages.
-    /// </summary>
-    /// <param name="tcpClient"></param> TcpClient to read byte stream from.
-    protected async Task HandleConnectionAsync(TcpClient tcpClient)
-    {
-        await Task.Yield();
-        // continue asynchronously on another threads
-
-        ReadMessage(tcpClient.GetStream());
-    }
-
-    private byte[] ReadBytes(NetworkStream networkStream, int length)
+    public static byte[] ReadBytes(NetworkStream networkStream, int length)
     {
         byte[] result = new byte[length];
         int totalBytesRead = 0;
@@ -416,7 +466,7 @@ public class ROSConnection : MonoBehaviour
         return result;
     }
     
-    private bool ReadMessageData(NetworkStream networkStream, out string topicName, out byte[] messageBytes)
+    public static bool ReadMessageData(NetworkStream networkStream, out string topicName, out byte[] messageBytes)
     {
         topicName = "";
         messageBytes = null;
@@ -443,76 +493,21 @@ public class ROSConnection : MonoBehaviour
         }
         catch (Exception e)
         {
-            Debug.LogError("Exception raised!! " + e);
+            if (ReportServerErrors)
+            {
+                Debug.LogError("Exception raised!! " + e);
+            }
             return false;
         }
 
         return true;
     }
-
-    void ReadMessage(NetworkStream networkStream)
+    
+    public static bool ReportServerErrors
     {
-        try
+        get
         {
-            if (ReadMessageData(networkStream, out string topicName, out byte[] readBuffer))
-            {
-
-                SubscriberCallback subs;
-                if (subscribers.TryGetValue(topicName, out subs))
-                {
-                    Message msg = (Message)subs.messageConstructor.Invoke(new object[0]);
-                    msg.Deserialize(readBuffer, 0);
-                    if (!Application.isPlaying)
-                    {
-                        Debug.LogWarning("Message received when the application was not playing, ignoring...");
-                        return;
-                    }
-                    foreach (Action<Message> callback in subs.callbacks)
-                    {
-                        try
-                        {
-                            callback(msg);
-                        }
-                        catch (Exception e)
-                        {
-                            Debug.LogError("Fatal error found and caught, " +
-                                           "continuing so that other subscribers will still work, but this should be fixed! Error:");
-                            Debug.LogError(e);
-                        }
-                    }
-                }
-            }
-        }
-        catch (Exception e)
-        {
-            Debug.LogError("Exception raised!! " + e);
-        }
-    }
-
-    /// <summary>
-    /// 	Handles multiple connections and locks.
-    /// </summary>
-    /// <param name="tcpClient"></param> TcpClient to read byte stream from.
-    private async Task StartHandleConnectionAsync(TcpClient tcpClient)
-    {
-        var connectionTask = HandleConnectionAsync(tcpClient);
-
-        lock (_lock)
-            activeConnectionTasks.Add(connectionTask);
-
-        try
-        {
-            await connectionTask;
-            // we may be on another thread after "await"
-        }
-        catch (Exception ex)
-        {
-            Debug.LogError(ex.ToString());
-        }
-        finally
-        {
-            lock (_lock)
-                activeConnectionTasks.Remove(connectionTask);
+            return Instance != null && Instance.UnityServerReady && !Instance.checkingConnection && !Instance.applicationClosing;
         }
     }
 
@@ -542,7 +537,7 @@ public class ROSConnection : MonoBehaviour
             {
                 while (true)   //we wait for a connection
                 {
-                    var tcpClient = await tcpListener.AcceptTcpClientAsync();
+                    TcpClient tcpClient = await tcpListener.AcceptTcpClientAsync();
 
                     if (!Application.isPlaying)
                     {
@@ -558,21 +553,9 @@ public class ROSConnection : MonoBehaviour
                         return;
                     }
 
-                    var task = StartHandleConnectionAsync(tcpClient);
-                    // if already faulted, re-throw any error on the calling context
-                    if (task.IsFaulted)
-                        await task;
-
-                    // try to get through the message queue before doing another await
-                    // but if messages are arriving faster than we can process them, don't freeze up
-                    float abortAtRealtime = Time.realtimeSinceStartup + 0.1f;
-                    while (tcpListener.Pending() && Time.realtimeSinceStartup < abortAtRealtime)
-                    {
-                        tcpClient = tcpListener.AcceptTcpClient();
-                        task = StartHandleConnectionAsync(tcpClient);
-                        if (task.IsFaulted)
-                            await task;
-                    }
+                    PersistentTCPSubscriber persistentTcpSubscriber = new PersistentTCPSubscriber(tcpClient);
+                    persistentTcpSubscribers.AddLast(persistentTcpSubscriber);
+                    
                 }
             }
             catch (ObjectDisposedException e)
@@ -745,14 +728,27 @@ public class ROSConnection : MonoBehaviour
         networkStream.Flush();
     }
 
+    private void OnApplicationQuit()
+    {
+        applicationClosing = true;
+    }
+
     private void OnDestroy()
     {
+        applicationClosing = true;
+        
         foreach (PersistentTCPConnection persistentTcpConnection in aliveConnections)
         {
             persistentTcpConnection.Shutdown();
         }
-        if (tcpListener != null)
+
+        foreach (PersistentTCPSubscriber persistentTcpSubscriber in persistentTcpSubscribers)
+        {
+            persistentTcpSubscriber.Shutdown();
+        }
+        if (tcpListener != null) {
             tcpListener.Stop();
+        }
         tcpListener = null;
     }
 }
