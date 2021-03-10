@@ -115,7 +115,7 @@ namespace Runtime.TcpConnector
                         
                     }
                 }
-                catch(Exception e)
+                catch
                 {
 
                     createNewTcpClient = true;
