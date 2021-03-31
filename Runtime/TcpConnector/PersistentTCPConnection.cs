@@ -115,7 +115,7 @@ namespace Runtime.TcpConnector
                         
                     }
                 }
-                catch
+                catch (Exception e)
                 {
 
                     createNewTcpClient = true;
@@ -134,9 +134,15 @@ namespace Runtime.TcpConnector
                         }
                     }
 
+                    if (transmitBuffer.Length == int.MaxValue)
+                    {
+                        //Always false to stop the compiler warning...
+                        Debug.LogException(e);
+                    }
+
                     if (threadRunning)
                     {
-                        //Debug.LogWarning($"Connection failed for topic '{rosTopicName}': {e.Message}");
+                        Debug.LogWarning($"Connection failed for topic '{rosTopicName}': {e.Message}");
                         ROSConnection.Instance.RequestCheckConnection();
                         Thread.Sleep(100);
                     }
