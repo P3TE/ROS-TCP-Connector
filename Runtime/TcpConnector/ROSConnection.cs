@@ -44,6 +44,7 @@ public class ROSConnection : MonoBehaviour
     const string ERROR_TOPIC_NAME = "__error";
     const string SYSCOMMAND_TOPIC_NAME = "__syscommand";
     const string HANDSHAKE_TOPIC_NAME = "__handshake";
+    const string CHECK_CONNECTION_TOPIC_NAME = "__check_connection";
     
     private Dictionary<string, PersistentTCPConnection> persistentConnectionPublishers = new Dictionary<string, PersistentTCPConnection>();
     private List<PersistentTCPConnection> aliveConnections = new List<PersistentTCPConnection>();
@@ -56,6 +57,7 @@ public class ROSConnection : MonoBehaviour
 
     const string SYSCOMMAND_SUBSCRIBE = "subscribe";
     const string SYSCOMMAND_PUBLISH = "publish";
+    const string SYSCOMMAND_CHECKCONNECTION = "check_connection";
 
     private bool applicationClosing = false;
 
@@ -190,6 +192,10 @@ public class ROSConnection : MonoBehaviour
                 }
             }
         }
+        else
+        {
+            //Debug.LogWarning($"Received message for topic {receivedMessageInfo.topicName} that is not being handled.");
+        }
     }
 
     private void ConnectToBridgeIfApplicable()
@@ -219,7 +225,12 @@ public class ROSConnection : MonoBehaviour
             {
                 Debug.Log("Checking connection status...");
                 checkingConnection = true;
-                SendServiceMessage<UnityHandshakeResponse>(HANDSHAKE_TOPIC_NAME, 
+                SendSysCommand(SYSCOMMAND_CHECKCONNECTION, new SysCommand_CheckConnection()
+                {
+                    ip = overrideUnityIP, 
+                    port = (ushort)unityPort
+                });
+                SendServiceMessage<UnityHandshakeResponse>(CHECK_CONNECTION_TOPIC_NAME, 
                     new UnityHandshakeRequest(overrideUnityIP, (ushort)unityPort), 
                     RosUnityCheckConnectionHandshakeCallback, OnRosUnityCheckConnectionHandshakeCallbackFailed);   
             }
@@ -229,10 +240,21 @@ public class ROSConnection : MonoBehaviour
     
     private void RosUnityCheckConnectionHandshakeCallback(UnityHandshakeResponse obj)
     {
-        //Do nothing.
-        Debug.Log("Connection status ok.");
-        checkingConnection = false;
-        shouldCheckConnection = false;
+        Debug.Log($"ROS Tcp server exists and is connected to: {obj.ip}");
+        string desiredIpPort = $"{overrideUnityIP}:{unityPort}";
+        if (obj.ip != desiredIpPort)
+        {
+            Debug.LogWarning($"Expected {desiredIpPort}, received {obj.ip}");
+            Debug.LogWarning("Desired ip:port doesn't match! We should probably reset the connection. (Not currently implemented)");
+            //TODO - This doesn't work...
+            //OnRosUnityCheckConnectionHandshakeCallbackFailed(new Exception("Desired ip:port doesn't match!"));
+        }
+        else
+        {
+            Debug.Log("Connection status ok.");
+            checkingConnection = false;
+            shouldCheckConnection = false;
+        }
     }
 
     private void OnRosUnityCheckConnectionHandshakeCallbackFailed(Exception obj)
@@ -651,6 +673,12 @@ public class ROSConnection : MonoBehaviour
     {
         public string topic;
         public string message_name;
+    }
+    
+    struct SysCommand_CheckConnection
+    {
+        public string ip;
+        public ushort port;
     }
 
     void SendSysCommand(string command, object param)

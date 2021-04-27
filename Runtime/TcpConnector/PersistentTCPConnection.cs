@@ -136,13 +136,13 @@ namespace Runtime.TcpConnector
 
                     if (transmitBuffer.Length == int.MaxValue)
                     {
-                        //Always false to stop the compiler warning...
+                        //Always false to stop the compiler warning the e is an unused variable.
                         Debug.LogException(e);
                     }
 
                     if (threadRunning)
                     {
-                        Debug.LogWarning($"Connection failed for topic '{rosTopicName}': {e.Message}");
+                        //Debug.LogWarning($"Connection failed for topic '{rosTopicName}': {e.Message}");
                         ROSConnection.Instance.RequestCheckConnection();
                         Thread.Sleep(100);
                     }

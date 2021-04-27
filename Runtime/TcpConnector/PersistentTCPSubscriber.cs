@@ -39,6 +39,12 @@ namespace Runtime.TcpConnector
 
         public bool ThreadRunning => threadRunning;
 
+        public string LikelyTopicName
+        {
+            private set;
+            get;
+        }
+
         public PersistentTCPSubscriber(TcpClient tcpClient)
         {
             this.tcpClient = tcpClient;
@@ -75,6 +81,8 @@ namespace Runtime.TcpConnector
                     {
                         break;
                     }
+
+                    LikelyTopicName = topicName;
                     receivedQueue.Enqueue(new ReceivedMessageInfo(topicName, messageBytes));
                 }
             }
@@ -101,11 +109,13 @@ namespace Runtime.TcpConnector
                     {
                         Debug.Log("Closing TCP Connection...");
                     }
+                    tcpClient.Client.Shutdown(SocketShutdown.Both);
                     tcpClient.Close();
                 }
             }
-            catch (Exception)
+            catch (Exception e)
             {
+                Debug.LogWarning(e);
                 //Ignored.
             }
         }
