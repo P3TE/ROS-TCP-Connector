@@ -57,7 +57,6 @@ public class ROSConnection : MonoBehaviour
 
     const string SYSCOMMAND_SUBSCRIBE = "subscribe";
     const string SYSCOMMAND_PUBLISH = "publish";
-    const string SYSCOMMAND_CHECKCONNECTION = "check_connection";
 
     private bool applicationClosing = false;
 
@@ -225,11 +224,6 @@ public class ROSConnection : MonoBehaviour
             {
                 Debug.Log("Checking connection status...");
                 checkingConnection = true;
-                SendSysCommand(SYSCOMMAND_CHECKCONNECTION, new SysCommand_CheckConnection()
-                {
-                    ip = overrideUnityIP, 
-                    port = (ushort)unityPort
-                });
                 SendServiceMessage<UnityHandshakeResponse>(CHECK_CONNECTION_TOPIC_NAME, 
                     new UnityHandshakeRequest(overrideUnityIP, (ushort)unityPort), 
                     RosUnityCheckConnectionHandshakeCallback, OnRosUnityCheckConnectionHandshakeCallbackFailed);   
