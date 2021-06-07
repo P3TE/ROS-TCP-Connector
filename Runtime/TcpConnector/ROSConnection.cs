@@ -37,6 +37,10 @@ public class ROSConnection : MonoBehaviour
 
     public int awaitDataMaxRetries = 10;
     public float awaitDataSleepSeconds = 1.0f;
+    
+    [Space]
+    [SerializeField] private GameObject awaitingConnectionGizmo;
+    
 
     static object _lock = new object(); // sync lock 
     static List<Task> activeConnectionTasks = new List<Task>(); // pending connections
@@ -101,6 +105,7 @@ public class ROSConnection : MonoBehaviour
 
     void RosUnityHandshakeCallback(UnityHandshakeResponse response)
     {
+        awaitingConnectionGizmo.SetActive(false);
         Debug.Log($"Handshake response received, ip: {response.ip}");
         StartMessageServer(response.ip, unityPort);
     }
@@ -203,6 +208,7 @@ public class ROSConnection : MonoBehaviour
         {
             if (!unityHandshakeInProgress)
             {
+                awaitingConnectionGizmo.SetActive(true);
                 unityHandshakeInProgress = true;
                 SendServiceMessage<UnityHandshakeResponse>(HANDSHAKE_TOPIC_NAME, 
                     new UnityHandshakeRequest(overrideUnityIP, (ushort)unityPort), 
@@ -560,11 +566,20 @@ public class ROSConnection : MonoBehaviour
                         try
                         {
                             tcpListener?.Stop();
-                        } catch(Exception) {}
+                        }
+                        catch (Exception)
+                        {
+                            // ignored
+                        }
+
                         try
                         {
                             tcpClient?.Close();
-                        } catch(Exception) {}
+                        }
+                        catch (Exception)
+                        {
+                            // ignored
+                        }
 
                         return;
                     }
