@@ -53,7 +53,8 @@ public class ROSConnection : MonoBehaviour
     private Dictionary<string, PersistentTCPConnection> persistentConnectionPublishers = new Dictionary<string, PersistentTCPConnection>();
     private List<PersistentTCPConnection> aliveConnections = new List<PersistentTCPConnection>();
     private LinkedList<PersistentTCPSubscriber> persistentTcpSubscribers = new LinkedList<PersistentTCPSubscriber>();
-    
+
+    private float simTimeOffset = 0f;
     private uint simTimeSeconds = 0;
     private uint simTimeNanoSeconds = 0;
     
@@ -282,9 +283,14 @@ public class ROSConnection : MonoBehaviour
 
     private void UpdateSimTime()
     {
-        float simulatedTime = UnityEngine.Time.time;
+        float simulatedTime = UnityEngine.Time.time - simTimeOffset;
         simTimeSeconds = (uint) Mathf.FloorToInt(simulatedTime);
         simTimeNanoSeconds = (uint) ((simulatedTime - (double) simTimeSeconds) * 1000000000.0);
+    }
+
+    public void ResetSimTime()
+    {
+        simTimeOffset = UnityEngine.Time.time;
     }
 
     public PersistentTCPConnection GetPersistentPublisher(string topicName)
