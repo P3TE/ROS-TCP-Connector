@@ -68,6 +68,7 @@ namespace Unity.Robotics.ROSTCPConnector
 
             public void Enqueue(SendsOutgoingMessages sendsOutgoingMessages)
             {
+                DebugTimingsLogger.Instance.toLog.Enqueue($"Enqueue @ {System.DateTime.Now.Millisecond}");
                 outgoingMessageQueue.Enqueue(sendsOutgoingMessages);
                 NewMessageReadyToSendEvent.Set();
             }
@@ -648,7 +649,9 @@ namespace Unity.Robotics.ROSTCPConnector
                         while (outgoingQueue.TryDequeue(out SendsOutgoingMessages sendsOutgoingMessages))
                         {
 
+                            DebugTimingsLogger.Instance.toLog.Enqueue($"SendInternal @ {System.DateTime.Now.Millisecond}");
                             SendsOutgoingMessages.SendToState sendToState = sendsOutgoingMessages.SendInternal(messageSerializer, networkStream);
+                            DebugTimingsLogger.Instance.toLog.Enqueue($"SendInternal Complete @ {System.DateTime.Now.Millisecond}");
                             switch (sendToState)
                             {
                                 case SendsOutgoingMessages.SendToState.Normal:

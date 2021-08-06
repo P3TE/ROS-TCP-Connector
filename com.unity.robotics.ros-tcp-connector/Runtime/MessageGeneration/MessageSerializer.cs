@@ -91,6 +91,9 @@ namespace Unity.Robotics.ROSTCPConnector.MessageGeneration
         {
             foreach (byte[] statement in m_ListOfSerializations)
                 stream.Write(statement, 0, statement.Length);
+
+            if(m_ListOfSerializations.Count > 0)
+                stream.Flush();
         }
 
         // Alignment, offset, padding
