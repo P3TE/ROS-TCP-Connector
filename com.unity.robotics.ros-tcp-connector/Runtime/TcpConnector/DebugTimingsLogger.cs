@@ -18,7 +18,15 @@ namespace Unity.Robotics.ROSTCPConnector
             Instance = this;
         }
 
-        public ConcurrentQueue<string> toLog = new ConcurrentQueue<string>();
+        private ConcurrentQueue<string> toLog = new ConcurrentQueue<string>();
+
+        public static void AddToLog(string toLog)
+        {
+            if (Instance != null)
+            {
+                Instance.toLog.Enqueue(toLog);
+            }
+        }
 
         private void LateUpdate()
         {
