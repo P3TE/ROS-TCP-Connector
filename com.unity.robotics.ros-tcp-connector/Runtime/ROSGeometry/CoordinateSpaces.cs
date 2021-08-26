@@ -53,6 +53,26 @@ namespace Unity.Robotics.ROSTCPConnector.ROSGeometry
         public Quaternion ConvertToRUF(Quaternion q) => new Quaternion(q.x, q.z, q.y, -q.w);
     }
 
+    public class ENU_GeoSpacial : ICoordinateSpace
+    {
+        public Vector3 ConvertFromRUF(Vector3 v) => new Vector3(v.x, v.z, v.y);
+        public Vector3 ConvertToRUF(Vector3 v) => new Vector3(v.x, v.z, v.y);
+
+        private static Quaternion rotationalOffset = Quaternion.Euler(0, -90,  0);
+        private static Quaternion inverseRotationalOffset = Quaternion.Euler(0, 90,  0);
+
+        public Quaternion ConvertFromRUF(Quaternion q)
+        {
+            q = q * rotationalOffset;
+            return new Quaternion(q.x, q.z, q.y, -q.w);
+        }
+        public Quaternion ConvertToRUF(Quaternion q)
+        {
+            q = new Quaternion(q.x, q.z, q.y, -q.w);
+            return q * inverseRotationalOffset;
+        }
+    }
+
     public enum CoordinateSpaceSelection
     {
         RUF,
