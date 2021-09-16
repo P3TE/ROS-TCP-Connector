@@ -31,51 +31,188 @@ namespace Unity.Robotics.ROSTCPConnector.ROSGeometry
         public virtual Quaternion ConvertToRUF(Quaternion q, bool geographic = false) => q;
     }
 
-    public class FLU : ICoordinateSpace
+    public class ENU_FLU : ICoordinateSpace
     {
-        public virtual Vector3 ConvertFromRUF(Vector3 v, bool geographic = false) => new Vector3(v.z, -v.x, v.y);
-        public virtual Vector3 ConvertToRUF(Vector3 v, bool geographic = false) => new Vector3(-v.y, v.z, v.x);
-        public virtual Quaternion ConvertFromRUF(Quaternion q, bool geographic = false) => new Quaternion(q.z, -q.x, q.y, -q.w);
-        public virtual Quaternion ConvertToRUF(Quaternion q, bool geographic = false) => new Quaternion(-q.y, q.z, q.x, -q.w);
+
+        public virtual Vector3 ConvertFromRUF(Vector3 v, bool geographic = false)
+        {
+            Vector3 result = new Vector3(v.z, -v.x, v.y);
+            if (geographic)
+            {
+                result = FromRUFApplyUnityZAxisDirection(result, GeometryCompass.GlobalUnityZAxisDirection);
+            }
+            return result;
+        }
+
+        public virtual Vector3 ConvertToRUF(Vector3 v, bool geographic = false)
+        {
+            if (geographic)
+            {
+                v = ToRUFApplyUnityZAxisDirection(v, GeometryCompass.GlobalUnityZAxisDirection);
+            }
+            return new Vector3(-v.y, v.z, v.x);
+        }
+
+        public virtual Quaternion ConvertFromRUF(Quaternion q, bool geographic = false)
+        {
+            if (geographic)
+            {
+                q = FromRUFApplyUnityZAxisDirection(q, GeometryCompass.GlobalUnityZAxisDirection);
+            }
+            return new Quaternion(q.z, -q.x, q.y, -q.w);
+        }
+
+        public virtual Quaternion ConvertToRUF(Quaternion q, bool geographic = false)
+        {
+            Quaternion result = new Quaternion(-q.y, q.z, q.x, -q.w);
+            if (geographic)
+            {
+                result = ToRUFApplyUnityZAxisDirection(result, GeometryCompass.GlobalUnityZAxisDirection);
+            }
+            return result;
+        }
+
+        #region UnityZAxisDirection
+
+        public static Vector3 FromRUFApplyUnityZAxisDirection(Vector3 v, CardinalDirection unityZAxisDirection)
+        {
+            switch (unityZAxisDirection)
+            {
+                case CardinalDirection.North:
+                    return new Vector3(-v.y, v.x, v.z);
+                case CardinalDirection.East:
+                    return new Vector3(v.x, v.y, v.z);
+                case CardinalDirection.South:
+                    return new Vector3(v.y, -v.x, v.z);
+                case CardinalDirection.West:
+                    return new Vector3(-v.x, -v.y, v.z);
+                default:
+                    throw new NotSupportedException();
+            }
+        }
+
+        public static Vector3 ToRUFApplyUnityZAxisDirection(Vector3 v, CardinalDirection unityZAxisDirection)
+        {
+            switch (unityZAxisDirection)
+            {
+                case CardinalDirection.North:
+                    return new Vector3(v.y, -v.x, v.z);
+                case CardinalDirection.East:
+                    return new Vector3(v.x, v.y, v.z);
+                case CardinalDirection.South:
+                    return new Vector3(-v.y, v.x, v.z);
+                case CardinalDirection.West:
+                    return new Vector3(-v.x, -v.y, v.z);
+                default:
+                    throw new NotSupportedException();
+            }
+        }
+
+        public static Quaternion FromRUFApplyUnityZAxisDirection(Quaternion q, CardinalDirection unityZAxisDirection)
+        {
+            switch (unityZAxisDirection)
+            {
+                case CardinalDirection.North:
+                    return GeometryCompass.k_NegativeNinetyYaw * q;
+                case CardinalDirection.East:
+                    //Nothing to do here.
+                    return q;
+                case CardinalDirection.South:
+                    return GeometryCompass.k_NinetyYaw * q;
+                case CardinalDirection.West:
+                    return GeometryCompass.k_OneEightyYaw * q;
+                default:
+                    throw new NotSupportedException();
+            }
+        }
+
+        public static Quaternion ToRUFApplyUnityZAxisDirection(Quaternion q, CardinalDirection unityZAxisDirection)
+        {
+            switch (unityZAxisDirection)
+            {
+                case CardinalDirection.North:
+                    return GeometryCompass.k_NinetyYaw * q;
+                case CardinalDirection.East:
+                    //Nothing to do here.
+                    return q;
+                case CardinalDirection.South:
+                    return GeometryCompass.k_NegativeNinetyYaw * q;
+                case CardinalDirection.West:
+                    return GeometryCompass.k_OneEightyYaw * q;
+                default:
+                    throw new NotSupportedException();
+            }
+        }
+
+        #endregion
+    }
+
+    public class FLU : ENU_FLU
+    {
     }
 
     public class ENU : FLU
     {
+    }
 
-        public override Vector3 ConvertFromRUF(Vector3 v, bool geographic = false)
+    public class NED_FRD : ICoordinateSpace
+    {
+
+        public virtual Vector3 ConvertFromRUF(Vector3 v, bool geographic = false)
         {
-            Vector3 result = base.ConvertFromRUF(v);
+            Vector3 result = new Vector3(v.z, v.x, -v.y);
             if (geographic)
             {
-                result = FromRUFApplyUnityZAxisDirection(base.ConvertFromRUF(v), GeometryCompass.GlobalUnityZAxisDirection);
+                result = FromRUFApplyUnityZAxisDirection(result, GeometryCompass.GlobalUnityZAxisDirection);
             }
             return result;
         }
+
+        public virtual Vector3 ConvertToRUF(Vector3 v, bool geographic = false)
+        {
+            if (geographic)
+            {
+                v = ToRUFApplyUnityZAxisDirection(v, GeometryCompass.GlobalUnityZAxisDirection);
+            }
+            return new Vector3(v.y, -v.z, v.x);
+        }
+
+        public virtual Quaternion ConvertFromRUF(Quaternion q, bool geographic = false)
+        {
+            if (geographic)
+            {
+                q = FromRUFApplyUnityZAxisDirection(q, GeometryCompass.GlobalUnityZAxisDirection);
+            }
+            return new Quaternion(q.z, q.x, -q.y, -q.w);
+        }
+
+        public virtual Quaternion ConvertToRUF(Quaternion q, bool geographic = false)
+        {
+            Quaternion result = new Quaternion(q.y, -q.z, q.x, -q.w);
+            if (geographic)
+            {
+                result = ToRUFApplyUnityZAxisDirection(result, GeometryCompass.GlobalUnityZAxisDirection);
+            }
+            return result;
+        }
+
+        #region UnityZAxisDirection
 
         public static Vector3 FromRUFApplyUnityZAxisDirection(Vector3 v, CardinalDirection unityZAxisDirection)
         {
             switch (unityZAxisDirection)
             {
                 case CardinalDirection.North:
-                    return new Vector3(-v.y, v.x, v.z);
-                case CardinalDirection.East:
                     return new Vector3(v.x, v.y, v.z);
+                case CardinalDirection.East:
+                    return new Vector3(-v.y, v.x, v.z);
                 case CardinalDirection.South:
-                    return new Vector3(v.y, -v.x, v.z);
-                case CardinalDirection.West:
                     return new Vector3(-v.x, -v.y, v.z);
+                case CardinalDirection.West:
+                    return new Vector3(v.y, -v.x, v.z);
                 default:
                     throw new NotSupportedException();
             }
-        }
-
-        public override Vector3 ConvertToRUF(Vector3 v, bool geographic = false)
-        {
-            if (geographic)
-            {
-                v = ToRUFApplyUnityZAxisDirection(v, GeometryCompass.GlobalUnityZAxisDirection);
-            }
-            return base.ConvertToRUF(v);
         }
 
         public static Vector3 ToRUFApplyUnityZAxisDirection(Vector3 v, CardinalDirection unityZAxisDirection)
@@ -83,181 +220,64 @@ namespace Unity.Robotics.ROSTCPConnector.ROSGeometry
             switch (unityZAxisDirection)
             {
                 case CardinalDirection.North:
-                    return new Vector3(v.y, -v.x, v.z);
-                case CardinalDirection.East:
                     return new Vector3(v.x, v.y, v.z);
+                case CardinalDirection.East:
+                    return new Vector3(v.y, -v.x, v.z);
                 case CardinalDirection.South:
-                    return new Vector3(-v.y, v.x, v.z);
-                case CardinalDirection.West:
                     return new Vector3(-v.x, -v.y, v.z);
+                case CardinalDirection.West:
+                    return new Vector3(-v.y, v.x, v.z);
                 default:
                     throw new NotSupportedException();
             }
         }
 
-        public override Quaternion ConvertFromRUF(Quaternion q, bool geographic = false)
+        public static Quaternion FromRUFApplyUnityZAxisDirection(Quaternion q, CardinalDirection unityZAxisDirection)
         {
-            if (geographic)
+            switch (unityZAxisDirection)
             {
-                switch (GeometryCompass.GlobalUnityZAxisDirection)
-                {
-                    case CardinalDirection.North:
-                        q = GeometryCompass.k_NegativeNinetyYaw * q;
-                        break;
-                    case CardinalDirection.East:
-                        //Nothing to do here.
-                        break;
-                    case CardinalDirection.South:
-                        q = GeometryCompass.k_NinetyYaw * q;
-                        break;
-                    case CardinalDirection.West:
-                        q = GeometryCompass.k_OneEightyYaw * q;
-                        break;
-                    default:
-                        throw new NotSupportedException();
-                }
+                case CardinalDirection.North:
+                    //Nothing to do here.
+                    return q;
+                case CardinalDirection.East:
+                    return GeometryCompass.k_NinetyYaw * q;
+                case CardinalDirection.South:
+                    return GeometryCompass.k_OneEightyYaw * q;
+                case CardinalDirection.West:
+                    return GeometryCompass.k_NegativeNinetyYaw * q;
+                default:
+                    throw new NotSupportedException();
             }
-            return base.ConvertFromRUF(q);
         }
 
-        public override Quaternion ConvertToRUF(Quaternion q, bool geographic = false)
+        public static Quaternion ToRUFApplyUnityZAxisDirection(Quaternion q, CardinalDirection unityZAxisDirection)
         {
-            if (geographic)
+            switch (unityZAxisDirection)
             {
-                switch (GeometryCompass.GlobalUnityZAxisDirection)
-                {
-                    case CardinalDirection.North:
-                        q = GeometryCompass.k_NinetyYaw * q;
-                        break;
-                    case CardinalDirection.East:
-                        //Nothing to do here.
-                        break;
-                    case CardinalDirection.South:
-                        q = GeometryCompass.k_NegativeNinetyYaw * q;
-                        break;
-                    case CardinalDirection.West:
-                        q = GeometryCompass.k_OneEightyYaw * q;
-                        break;
-                    default:
-                        throw new NotSupportedException();
-                }
+                case CardinalDirection.North:
+                    //Nothing to do here.
+                    return q;
+                case CardinalDirection.East:
+                    return GeometryCompass.k_NegativeNinetyYaw * q;
+                case CardinalDirection.South:
+                    return GeometryCompass.k_OneEightyYaw * q;
+                case CardinalDirection.West:
+                    return GeometryCompass.k_NinetyYaw * q;
+                default:
+                    throw new NotSupportedException();
             }
-            return base.ConvertToRUF(q);
         }
+
+        #endregion
+
     }
 
-    public class FRD : ICoordinateSpace
+    public class FRD : NED_FRD
     {
-        public virtual Vector3 ConvertFromRUF(Vector3 v, bool geographic = false) => new Vector3(v.z, v.x, -v.y);
-        public virtual Vector3 ConvertToRUF(Vector3 v, bool geographic = false) => new Vector3(v.y, -v.z, v.x);
-        public virtual Quaternion ConvertFromRUF(Quaternion q, bool geographic = false) => new Quaternion(q.z, q.x, -q.y, -q.w);
-        public virtual Quaternion ConvertToRUF(Quaternion q, bool geographic = false) => new Quaternion(q.y, -q.z, q.x, -q.w);
     }
 
     public class NED : FRD
     {
-        public override Vector3 ConvertFromRUF(Vector3 v, bool geographic = false)
-        {
-            Vector3 result = base.ConvertFromRUF(v);
-            if (geographic)
-            {
-                result = FromRUFApplyUnityZAxisDirection(base.ConvertFromRUF(v), GeometryCompass.GlobalUnityZAxisDirection);
-            }
-            return result;
-        }
-
-        public static Vector3 FromRUFApplyUnityZAxisDirection(Vector3 v, CardinalDirection unityZAxisDirection)
-        {
-            switch (unityZAxisDirection)
-            {
-                case CardinalDirection.North:
-                    return new Vector3(v.x, v.y, v.z);
-                case CardinalDirection.East:
-                    return new Vector3(-v.y, v.x, v.z);
-                case CardinalDirection.South:
-                    return new Vector3(-v.x, -v.y, v.z);
-                case CardinalDirection.West:
-                    return new Vector3(v.y, -v.x, v.z);
-                default:
-                    throw new NotSupportedException();
-            }
-        }
-
-        public override Vector3 ConvertToRUF(Vector3 v, bool geographic = false)
-        {
-            if (geographic)
-            {
-                v = ToRUFApplyUnityZAxisDirection(v, GeometryCompass.GlobalUnityZAxisDirection);
-            }
-            return base.ConvertToRUF(v);
-        }
-
-        public static Vector3 ToRUFApplyUnityZAxisDirection(Vector3 v, CardinalDirection unityZAxisDirection)
-        {
-            switch (unityZAxisDirection)
-            {
-                case CardinalDirection.North:
-                    return new Vector3(v.x, v.y, v.z);
-                case CardinalDirection.East:
-                    return new Vector3(v.y, -v.x, v.z);
-                case CardinalDirection.South:
-                    return new Vector3(-v.x, -v.y, v.z);
-                case CardinalDirection.West:
-                    return new Vector3(-v.y, v.x, v.z);
-                default:
-                    throw new NotSupportedException();
-            }
-        }
-
-        public override Quaternion ConvertFromRUF(Quaternion q, bool geographic = false)
-        {
-            if (geographic)
-            {
-                switch (GeometryCompass.GlobalUnityZAxisDirection)
-                {
-                    case CardinalDirection.North:
-                        //Nothing to do here.
-                        break;
-                    case CardinalDirection.East:
-                        q = GeometryCompass.k_NinetyYaw * q;
-                        break;
-                    case CardinalDirection.South:
-                        q = GeometryCompass.k_OneEightyYaw * q;
-                        break;
-                    case CardinalDirection.West:
-                        q = GeometryCompass.k_NegativeNinetyYaw * q;
-                        break;
-                    default:
-                        throw new NotSupportedException();
-                }
-            }
-            return base.ConvertFromRUF(q);
-        }
-
-        public override Quaternion ConvertToRUF(Quaternion q, bool geographic = false)
-        {
-            if (geographic)
-            {
-                switch (GeometryCompass.GlobalUnityZAxisDirection)
-                {
-                    case CardinalDirection.North:
-                        //Nothing to do here.
-                        break;
-                    case CardinalDirection.East:
-                        q = GeometryCompass.k_NegativeNinetyYaw * q;
-                        break;
-                    case CardinalDirection.South:
-                        q = GeometryCompass.k_OneEightyYaw * q;
-                        break;
-                    case CardinalDirection.West:
-                        q = GeometryCompass.k_NinetyYaw * q;
-                        break;
-                    default:
-                        throw new NotSupportedException();
-                }
-            }
-            return base.ConvertToRUF(q);
-        }
     }
 
 

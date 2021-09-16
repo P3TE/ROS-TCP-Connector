@@ -150,81 +150,97 @@ namespace Unity.Robotics.ROSTCPConnector.ROSGeometry
         #region NiceAdditions
 
         private static GeometryCompass _instance = null;
+        private static bool _instanceSearched = false;
 
         public static GeometryCompass Instance
         {
             get
             {
-                if (_instance == null)
+                if (_instance == null && !_instanceSearched)
                 {
+                    _instanceSearched = true;
                     GeometryCompass[] sceneCompasses = FindObjectsOfType<GeometryCompass>();
                     if (sceneCompasses.Length == 0)
                     {
-                        throw new Exception("No GeometryCompass in scene, please add one.");
+                        Debug.LogWarning("No GeometryCompass in scene, please add one.");
                     }
-                    if (sceneCompasses.Length > 1)
+                    else
                     {
-                        throw new Exception("Multiple instances of GeometryCompass in scene, please only have one.");
+                        if (sceneCompasses.Length > 1)
+                        {
+                            Debug.LogWarning("Multiple instances of GeometryCompass in scene, please only have one.");
+                        }
+                        _instance = sceneCompasses[0];
                     }
-
-                    _instance = sceneCompasses[0];
                 }
-
                 return _instance;
             }
         }
 
-        public Vector3 GetWorldXZDirection(CardinalDirection desiredDirection)
+        public static Vector3 GetWorldXZDirection(CardinalDirection desiredDirection)
         {
-            float[] matrix2X2;
-            float x;
-            float z;
-            switch (desiredDirection)
+
+            switch (GlobalUnityZAxisDirection)
             {
                 case CardinalDirection.North:
-                    x = 0;
-                    z = 1;
-                    break;
+                    switch (desiredDirection)
+                    {
+                        case CardinalDirection.North:
+                            return new Vector3(0, 0, 1);
+                        case CardinalDirection.East:
+                            return new Vector3(1, 0, 0);
+                        case CardinalDirection.South:
+                            return new Vector3(0, 0, -1);
+                        case CardinalDirection.West:
+                            return new Vector3(-1, 0, 0);
+                        default:
+                            throw new Exception($"Unsupported CardinalDirection: {desiredDirection}");
+                    }
                 case CardinalDirection.East:
-                    x = 1;
-                    z = 0;
-                    break;
+                    switch (desiredDirection)
+                    {
+                        case CardinalDirection.North:
+                            return new Vector3(-1, 0, 0);
+                        case CardinalDirection.East:
+                            return new Vector3(0, 0, 1);
+                        case CardinalDirection.South:
+                            return new Vector3(1, 0, 0);
+                        case CardinalDirection.West:
+                            return new Vector3(0, 0, -1);
+                        default:
+                            throw new Exception($"Unsupported CardinalDirection: {desiredDirection}");
+                    }
                 case CardinalDirection.South:
-                    x = 0;
-                    z = -1;
-                    break;
+                    switch (desiredDirection)
+                    {
+                        case CardinalDirection.North:
+                            return new Vector3(0, 0, -1);
+                        case CardinalDirection.East:
+                            return new Vector3(-1, 0, 0);
+                        case CardinalDirection.South:
+                            return new Vector3(0, 0, 1);
+                        case CardinalDirection.West:
+                            return new Vector3(1, 0, 0);
+                        default:
+                            throw new Exception($"Unsupported CardinalDirection: {desiredDirection}");
+                    }
                 case CardinalDirection.West:
-                    x = -1;
-                    z = 0;
-                    break;
+                    switch (desiredDirection)
+                    {
+                        case CardinalDirection.North:
+                            return new Vector3(1, 0, 0);
+                        case CardinalDirection.East:
+                            return new Vector3(0, 0, -1);
+                        case CardinalDirection.South:
+                            return new Vector3(-1, 0, 0);
+                        case CardinalDirection.West:
+                            return new Vector3(0, 0, 1);
+                        default:
+                            throw new Exception($"Unsupported CardinalDirection: {desiredDirection}");
+                    }
                 default:
-                    throw new Exception($"Unsupported CardinalDirection: {desiredDirection}");
+                    throw new Exception($"Unsupported CardinalDirection: {GlobalUnityZAxisDirection}");
             }
-
-
-            switch (UnityZAxisDirection)
-            {
-                case CardinalDirection.North:
-                    matrix2X2 = new float[] {1, 0, 0, 1};
-                    break;
-                case CardinalDirection.East:
-                    matrix2X2 = new float[] {0, -1, 1, 0};
-                    break;
-                case CardinalDirection.South:
-                    matrix2X2 = new float[] {-1, 0, 0, -1};
-                    break;
-                case CardinalDirection.West:
-                    matrix2X2 = new float[] {0, 1, -1, 0};
-                    break;
-                default:
-                    throw new Exception($"Unsupported CardinalDirection: {desiredDirection}");
-            }
-
-            return new Vector3(
-                (matrix2X2[0] * x + matrix2X2[1] * z),
-                0,
-                (matrix2X2[2] * x + matrix2X2[3] * z)
-                );
         }
 
         #endregion
