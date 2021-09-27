@@ -133,6 +133,71 @@ namespace Unity.Robotics.ROSTCPConnector.ROSGeometry
             }
         }
 
+        public static float GetUnityYawDegrees(CardinalDirection desiredDirection)
+        {
+            switch (GlobalUnityZAxisDirection)
+            {
+                case CardinalDirection.North:
+                    switch (desiredDirection)
+                    {
+                        case CardinalDirection.North:
+                            return 0.0f;
+                        case CardinalDirection.East:
+                            return 90.0f;
+                        case CardinalDirection.South:
+                            return 180.0f;
+                        case CardinalDirection.West:
+                            return -90.0f;
+                        default:
+                            throw new Exception($"Unsupported CardinalDirection: {desiredDirection}");
+                    }
+                case CardinalDirection.East:
+                    switch (desiredDirection)
+                    {
+                        case CardinalDirection.North:
+                            return -90.0f;
+                        case CardinalDirection.East:
+                            return 0.0f;
+                        case CardinalDirection.South:
+                            return 90.0f;
+                        case CardinalDirection.West:
+                            return 180.0f;
+                        default:
+                            throw new Exception($"Unsupported CardinalDirection: {desiredDirection}");
+                    }
+                case CardinalDirection.South:
+                    switch (desiredDirection)
+                    {
+                        case CardinalDirection.North:
+                            return 180.0f;
+                        case CardinalDirection.East:
+                            return -90.0f;
+                        case CardinalDirection.South:
+                            return 0.0f;
+                        case CardinalDirection.West:
+                            return 90.0f;
+                        default:
+                            throw new Exception($"Unsupported CardinalDirection: {desiredDirection}");
+                    }
+                case CardinalDirection.West:
+                    switch (desiredDirection)
+                    {
+                        case CardinalDirection.North:
+                            return 90.0f;
+                        case CardinalDirection.East:
+                            return 180.0f;
+                        case CardinalDirection.South:
+                            return -90.0f;
+                        case CardinalDirection.West:
+                            return 0.0f;
+                        default:
+                            throw new Exception($"Unsupported CardinalDirection: {desiredDirection}");
+                    }
+                default:
+                    throw new Exception($"Unsupported CardinalDirection: {GlobalUnityZAxisDirection}");
+            }
+        }
+
         #endregion
     }
 }
