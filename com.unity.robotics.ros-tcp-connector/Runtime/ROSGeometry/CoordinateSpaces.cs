@@ -406,4 +406,90 @@ namespace Unity.Robotics.ROSTCPConnector.ROSGeometry
             }
         }
     }
+
+    public enum RobotCoordinateSpacesSelection
+    {
+        ENUFLU,
+        NEDFRD
+    }
+
+    public static class RobotCoordinateSpacesExtensions
+    {
+        public static ICoordinateSpace Local(this RobotCoordinateSpacesSelection rc) {
+
+            switch (rc)
+            {
+                case RobotCoordinateSpacesSelection.ENUFLU:
+                    return new FLU();
+                case RobotCoordinateSpacesSelection.NEDFRD:
+                    return new FRD();
+                default:
+                    Debug.LogError("Invalid coordinate space " + rc);
+                    return new FLU();
+            }
+        }
+
+        public static ICoordinateSpace Global(this RobotCoordinateSpacesSelection rc) {
+
+            switch (rc)
+            {
+                case RobotCoordinateSpacesSelection.ENUFLU:
+                    return new ENU();
+                case RobotCoordinateSpacesSelection.NEDFRD:
+                    return new NED();
+                default:
+                    Debug.LogError("Invalid coordinate space " + rc);
+                    return new ENU();
+            }
+        }
+
+        public static Vector3Msg ToLocal(this RobotCoordinateSpacesSelection rc, Vector3 vector3)
+        {
+            Vector3 convertedVector = rc.Local().ConvertFromRUF(vector3);
+            return new Vector3Msg(convertedVector.x, convertedVector.y, convertedVector.z);
+        }
+
+        public static Vector3Msg ToGlobal(this RobotCoordinateSpacesSelection rc, Vector3 vector3)
+        {
+            Vector3 convertedVector = rc.Global().ConvertFromRUF(vector3);
+            return new Vector3Msg(convertedVector.x, convertedVector.y, convertedVector.z);
+        }
+
+        public static QuaternionMsg ToLocal(this RobotCoordinateSpacesSelection rc, Quaternion quaternion)
+        {
+            Quaternion convertedQuaternion = rc.Local().ConvertFromRUF(quaternion);
+            return new QuaternionMsg(convertedQuaternion.x, convertedQuaternion.y, convertedQuaternion.z, convertedQuaternion.w);
+        }
+
+        public static QuaternionMsg ToGlobal(this RobotCoordinateSpacesSelection rc, Quaternion quaternion)
+        {
+            Quaternion convertedQuaternion = rc.Global().ConvertFromRUF(quaternion);
+            return new QuaternionMsg(convertedQuaternion.x, convertedQuaternion.y, convertedQuaternion.z, convertedQuaternion.w);
+        }
+
+        public static Vector3Msg FromLocal(this RobotCoordinateSpacesSelection rc, Vector3 vector3)
+        {
+            Vector3 convertedVector = rc.Local().ConvertToRUF(vector3);
+            return new Vector3Msg(convertedVector.x, convertedVector.y, convertedVector.z);
+        }
+
+        public static Vector3Msg FromGlobal(this RobotCoordinateSpacesSelection rc, Vector3 vector3)
+        {
+            Vector3 convertedVector = rc.Global().ConvertToRUF(vector3);
+            return new Vector3Msg(convertedVector.x, convertedVector.y, convertedVector.z);
+        }
+
+        public static QuaternionMsg FromLocal(this RobotCoordinateSpacesSelection rc, Quaternion quaternion)
+        {
+            Quaternion convertedQuaternion = rc.Local().ConvertToRUF(quaternion);
+            return new QuaternionMsg(convertedQuaternion.x, convertedQuaternion.y, convertedQuaternion.z, convertedQuaternion.w);
+        }
+
+        public static QuaternionMsg FromGlobal(this RobotCoordinateSpacesSelection rc, Quaternion quaternion)
+        {
+            Quaternion convertedQuaternion = rc.Global().ConvertToRUF(quaternion);
+            return new QuaternionMsg(convertedQuaternion.x, convertedQuaternion.y, convertedQuaternion.z, convertedQuaternion.w);
+        }
+    }
+
 }
