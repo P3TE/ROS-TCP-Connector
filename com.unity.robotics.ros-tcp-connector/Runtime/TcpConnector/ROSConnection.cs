@@ -52,6 +52,18 @@ namespace Unity.Robotics.ROSTCPConnector
         const int k_DefaultPublisherQueueSize = 10;
         const bool k_DefaultPublisherLatch = false;
 
+        public string ConnectionStatusText
+        {
+            get;
+            private set;
+        }
+
+        public bool IsConnected
+        {
+            get;
+            private set;
+        }
+
         // GUI window variables
         internal HUDPanel m_HudPanel = null;
 
@@ -349,6 +361,8 @@ namespace Unity.Robotics.ROSTCPConnector
         void Start()
         {
             InitializeHUD();
+            ConnectionStatusText = "Initialising...";
+            IsConnected = false;
 
             if (ConnectOnStart)
             {
@@ -615,8 +629,8 @@ namespace Unity.Robotics.ROSTCPConnector
         }
 
         static async Task ConnectionThread(
-            string rosIPAddress,
-            int rosPort,
+            string rosIPAddress,            //TODO - Implement this better.
+            int rosPort,            //TODO - Implement this better.
             float networkTimeoutSeconds,
             float keepaliveTime,
             int sleepMilliseconds,
@@ -631,6 +645,8 @@ namespace Unity.Robotics.ROSTCPConnector
             int nextReconnectionDelay = 1000;
             MessageSerializer messageSerializer = new MessageSerializer();
 
+            int connectionAttemptCount = 0;
+
             while (!token.IsCancellationRequested)
             {
                 TcpClient client = null;
@@ -639,6 +655,12 @@ namespace Unity.Robotics.ROSTCPConnector
                 try
                 {
                     ROSConnection.m_HasConnectionError = true; // until we actually see a reply back, assume there's a problem
+
+                    rosIPAddress = ROSConnection._instance.RosIPAddress;
+                    rosPort = ROSConnection._instance.RosPort;
+                    connectionAttemptCount++;
+                    ROSConnection._instance.ConnectionStatusText = $"Attempt {connectionAttemptCount} to connect to {rosIPAddress}:{rosPort}";
+                    ROSConnection._instance.IsConnected = false;
 
                     client = new TcpClient();
                     client.Connect(rosIPAddress, rosPort);
@@ -652,6 +674,11 @@ namespace Unity.Robotics.ROSTCPConnector
                     readerCancellation = new CancellationTokenSource();
                     _ = Task.Run(() => ReaderThread(nextReaderIdx, networkStream, incomingQueue, sleepMilliseconds, readerCancellation.Token));
                     nextReaderIdx++;
+
+
+                    connectionAttemptCount = 0;
+                    ROSConnection._instance.ConnectionStatusText = $"Connected to {rosIPAddress}:{rosPort}";
+                    ROSConnection._instance.IsConnected = true;
 
                     // connected, now just watch our queue for outgoing messages to send (or else send a keepalive message occasionally)
                     float waitingSinceRealTime = s_RealTimeSinceStartup;
@@ -707,7 +734,7 @@ namespace Unity.Robotics.ROSTCPConnector
                 catch (Exception e)
                 {
                     ROSConnection.m_HasConnectionError = true;
-                    Debug.Log($"Connection to {rosIPAddress}:{rosPort} failed - " + e);
+                    Debug.Log($"Connection to {ROSConnection._instance.RosIPAddress}:{ROSConnection._instance.RosPort} failed - " + e);
                     await Task.Delay(nextReconnectionDelay);
                 }
                 finally
