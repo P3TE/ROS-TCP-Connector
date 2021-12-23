@@ -32,6 +32,8 @@ namespace Unity.Robotics.ROSTCPConnector
         bool m_ConnectOnStart = true;
         public bool ConnectOnStart { get => m_ConnectOnStart; set => m_ConnectOnStart = value; }
 
+        [SerializeField] private bool showConnectionFailedWarning = true;
+
         [SerializeField]
         [Tooltip("If nothing has been sent for this long (seconds), send a keepalive message to check the connection is still working.")]
         float m_KeepaliveTime = 1;
@@ -530,7 +532,8 @@ namespace Unity.Robotics.ROSTCPConnector
                 OnConnectionLostCallback,
                 m_OutgoingMessageQueue,
                 m_IncomingMessages,
-                new CancellationTokenSource()
+                new CancellationTokenSource(),
+                showConnectionFailedWarning
             );
             Task.Run(() => ConnectionThread(connectionThreadData));
         }
@@ -779,6 +782,8 @@ namespace Unity.Robotics.ROSTCPConnector
 
             public CancellationTokenSource ConnectionThreadCancellation { get; }
 
+            public bool ShowConnectionFailedWarning { get; }
+
             public int ReaderIdx { get; private set; }
 
             public void IncrementReaderIdx()
@@ -799,7 +804,7 @@ namespace Unity.Robotics.ROSTCPConnector
 
             public bool HasError => Error != null;
 
-            public ConnectionThreadData(string rosIPAddress, int rosPort, float networkTimeoutSeconds, float keepaliveTime, int sleepMilliseconds, Action<NetworkStream> onConnectionStartedCallback, Action deregisterAll, OutgoingMessageQueue outgoingQueue, ConcurrentQueue<Tuple<string, byte[]>> incomingQueue, CancellationTokenSource cancellationTokenSource)
+            public ConnectionThreadData(string rosIPAddress, int rosPort, float networkTimeoutSeconds, float keepaliveTime, int sleepMilliseconds, Action<NetworkStream> onConnectionStartedCallback, Action deregisterAll, OutgoingMessageQueue outgoingQueue, ConcurrentQueue<Tuple<string, byte[]>> incomingQueue, CancellationTokenSource cancellationTokenSource, bool showConnectionFailedWarning)
             {
                 RosIPAddress = rosIPAddress;
                 RosPort = rosPort;
@@ -816,6 +821,7 @@ namespace Unity.Robotics.ROSTCPConnector
                 ConnectionAttemptCount = 0;
                 QueueFullWarningCount = 0;
                 ReaderIdx = 100;
+                ShowConnectionFailedWarning = showConnectionFailedWarning;
             }
         }
 
@@ -915,7 +921,10 @@ namespace Unity.Robotics.ROSTCPConnector
                 }
                 catch (Exception e)
                 {
-                    Debug.Log($"Connection to {connectionInfo.RosIPAddress}:{connectionInfo.RosPort} failed - " + e);
+                    if (connectionInfo.ShowConnectionFailedWarning)
+                    {
+                        Debug.Log($"Connection to {connectionInfo.RosIPAddress}:{connectionInfo.RosPort} failed - " + e);
+                    }
                     await Task.Delay(nextReconnectionDelay);
                     connectionInfo.Error = e;
                 }
