@@ -10,6 +10,7 @@ using UnityEngine.Serialization;
 using System.Collections.Concurrent;
 using System.Threading;
 using System.Linq;
+using System.Runtime.Serialization;
 
 namespace Unity.Robotics.ROSTCPConnector
 {
@@ -566,6 +567,11 @@ namespace Unity.Robotics.ROSTCPConnector
                 //For all publishers, notify that they need to re-register.
                 topicInfo.OnConnectionLost();
             }
+
+            if (connectionThreadData.Error != null)
+            {
+                Debug.LogException(connectionThreadData.Error);
+            }
         }
 
         public void Disconnect()
@@ -881,24 +887,33 @@ namespace Unity.Robotics.ROSTCPConnector
                         int previousQueueFullWarningCount = connectionInfo.QueueFullWarningCount;
                         while (connectionInfo.OutgoingQueue.TryDequeue(out OutgoingMessageSender sendsOutgoingMessages))
                         {
-                            OutgoingMessageSender.SendToState sendToState = sendsOutgoingMessages.SendInternal(messageSerializer, connectionInfo.NetworkStream);
-                            switch (sendToState)
+                            try
                             {
-                                case OutgoingMessageSender.SendToState.Normal:
-                                    //This is normal operation.
-                                    break;
-                                case OutgoingMessageSender.SendToState.QueueFullWarning:
-                                    //Unable to send messages to ROS as fast as we're generating them.
-                                    //This could be caused by a TCP connection that is too slow.
-                                    connectionInfo.QueueFullWarningCount++;
-                                    queueFullWarningFlagged = true;
-                                    break;
-                                case OutgoingMessageSender.SendToState.NoMessageToSendError:
-                                    //This indicates an error has occurred
-                                    connectionInfo.Error = new Exception("Logic Error! A 'SendsOutgoingMessages' was queued but did not have any messages to send.");
-                                    Debug.LogError(
-                                        "Logic Error! A 'SendsOutgoingMessages' was queued but did not have any messages to send.");
-                                    break;
+                                OutgoingMessageSender.SendToState sendToState = sendsOutgoingMessages.SendInternal(messageSerializer, connectionInfo.NetworkStream);
+                                switch (sendToState)
+                                {
+                                    case OutgoingMessageSender.SendToState.Normal:
+                                        //This is normal operation.
+                                        break;
+                                    case OutgoingMessageSender.SendToState.QueueFullWarning:
+                                        //Unable to send messages to ROS as fast as we're generating them.
+                                        //This could be caused by a TCP connection that is too slow.
+                                        connectionInfo.QueueFullWarningCount++;
+                                        queueFullWarningFlagged = true;
+                                        break;
+                                    case OutgoingMessageSender.SendToState.NoMessageToSendError:
+                                        //This indicates an error has occurred
+                                        connectionInfo.Error = new Exception("Logic Error! A 'SendsOutgoingMessages' was queued but did not have any messages to send.");
+                                        Debug.LogError(
+                                            "Logic Error! A 'SendsOutgoingMessages' was queued but did not have any messages to send.");
+                                        break;
+                                }
+                            }
+                            catch (SerializationException e)
+                            {
+                                //Catch serialisation exceptions and discard the message so that the whole RosConnection doesn't die...
+                                connectionInfo.Error = e;
+                                Debug.LogException(e);
                             }
 
                             connectionInfo.Token.ThrowIfCancellationRequested();

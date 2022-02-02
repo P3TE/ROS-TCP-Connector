@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.Serialization;
 using System.Threading;
 using Unity.Robotics.ROSTCPConnector.MessageGeneration;
 using UnityEngine;
@@ -111,8 +112,15 @@ namespace Unity.Robotics.ROSTCPConnector
             //Clear the serializer
             messageSerializer.Clear();
             //Prepare the data to send.
-            messageSerializer.Write(TopicName);
-            messageSerializer.SerializeMessageWithLength(message);
+            try
+            {
+                messageSerializer.Write(TopicName);
+                messageSerializer.SerializeMessageWithLength(message);
+            }
+            catch (Exception e)
+            {
+                throw new SerializationException($"Failed to serialise message of type {message.GetType().Name}", e);
+            }
             //Send via the stream.
             messageSerializer.SendTo(stream);
         }
