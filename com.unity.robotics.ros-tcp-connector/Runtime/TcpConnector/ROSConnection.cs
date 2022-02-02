@@ -554,7 +554,7 @@ namespace Unity.Robotics.ROSTCPConnector
             RefreshTopicsList();
         }
 
-        void OnConnectionLostCallback()
+        void OnConnectionLostCallback(bool connectionEndedUnexpectedly)
         {
             RosTopicState[] topics;
             lock (m_Topics)
@@ -568,7 +568,7 @@ namespace Unity.Robotics.ROSTCPConnector
                 topicInfo.OnConnectionLost();
             }
 
-            if (connectionThreadData.Error != null)
+            if (connectionEndedUnexpectedly && connectionThreadData.Error != null)
             {
                 Debug.LogException(connectionThreadData.Error);
             }
@@ -788,7 +788,7 @@ namespace Unity.Robotics.ROSTCPConnector
             public float KeepaliveTime { get; }
             public int SleepMilliseconds { get; }
             public Action<NetworkStream> OnConnectionStartedCallback { get; }
-            public Action DeregisterAll { get; }
+            public Action<bool> DeregisterAll { get; }
             public OutgoingMessageQueue OutgoingQueue { get; }
             public ConcurrentQueue<Tuple<string, byte[]>> IncomingQueue { get; }
 
@@ -816,7 +816,7 @@ namespace Unity.Robotics.ROSTCPConnector
 
             public bool HasError => Error != null;
 
-            public ConnectionThreadData(string rosIPAddress, int rosPort, float networkTimeoutSeconds, float keepaliveTime, int sleepMilliseconds, Action<NetworkStream> onConnectionStartedCallback, Action deregisterAll, OutgoingMessageQueue outgoingQueue, ConcurrentQueue<Tuple<string, byte[]>> incomingQueue, CancellationTokenSource cancellationTokenSource, bool showConnectionFailedWarning)
+            public ConnectionThreadData(string rosIPAddress, int rosPort, float networkTimeoutSeconds, float keepaliveTime, int sleepMilliseconds, Action<NetworkStream> onConnectionStartedCallback, Action<bool> deregisterAll, OutgoingMessageQueue outgoingQueue, ConcurrentQueue<Tuple<string, byte[]>> incomingQueue, CancellationTokenSource cancellationTokenSource, bool showConnectionFailedWarning)
             {
                 RosIPAddress = rosIPAddress;
                 RosPort = rosPort;
@@ -846,6 +846,7 @@ namespace Unity.Robotics.ROSTCPConnector
             {
                 TcpClient client = null;
                 CancellationTokenSource readerCancellation = null;
+                bool connectionEndedUnexpectedly = false;
 
                 try
                 {
@@ -854,6 +855,7 @@ namespace Unity.Robotics.ROSTCPConnector
 
                     client = new TcpClient();
                     client.Connect(connectionInfo.RosIPAddress, connectionInfo.RosPort);
+                    connectionEndedUnexpectedly = true;
 
                     connectionInfo.NetworkStream = client.GetStream();
                     connectionInfo.NetworkStream.ReadTimeout = (int)(connectionInfo.NetworkTimeoutSeconds * 1000);
@@ -939,6 +941,7 @@ namespace Unity.Robotics.ROSTCPConnector
                 }
                 catch (OperationCanceledException)
                 {
+                    connectionEndedUnexpectedly = false;
                 }
                 catch (Exception e)
                 {
@@ -959,7 +962,7 @@ namespace Unity.Robotics.ROSTCPConnector
 
                     // clear the message queue
                     ClearMessageQueue(connectionInfo.OutgoingQueue);
-                    connectionInfo.DeregisterAll();
+                    connectionInfo.DeregisterAll(connectionEndedUnexpectedly);
                 }
                 await Task.Yield();
             }
