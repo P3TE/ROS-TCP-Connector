@@ -598,6 +598,12 @@ namespace Unity.Robotics.ROSTCPConnector
         {
             s_RealTimeSinceStartup = Time.realtimeSinceStartup;
 
+            if (connectionThreadData == null)
+            {
+                // Not connected
+                return;
+            }
+
             //Clear the message queue when not connected.
             if (connectionThreadData.ConnectionState == ConnectionThreadState.NotConnected)
             {
