@@ -236,5 +236,47 @@ namespace Unity.Robotics.ROSTCPConnector.MessageGeneration
             //The fieldOfView from the camera is accurate, return it.
             return camera.fieldOfView;
         }
+
+        /**
+         * Given a horizontal field of view (in radians)
+         * and a resolution (in pixels)
+         * calculate the corresponding vertical field of view (in radians)
+         */
+        public static float CalculateVerticalFieldOfViewRad(float horizontalFieldOfViewRad, Vector2Int resolution)
+        {
+            float aspectRatio = ((float) resolution.x) / ((float) resolution.y);
+            return CalculateVerticalFieldOfViewRad(horizontalFieldOfViewRad, aspectRatio);
+        }
+
+        /**
+         * Given a horizontal field of view (in radians)
+         * and an aspect ratio (width / height)
+         * calculate the corresponding vertical field of view (in radians)
+         */
+        public static float CalculateVerticalFieldOfViewRad(float horizontalFieldOfViewRad, float aspectRatio)
+        {
+            return 2.0f * Mathf.Atan(aspectRatio * Mathf.Tan(horizontalFieldOfViewRad * 0.5f));
+        }
+
+        /**
+         * Given a vertical field of view (in radians)
+         * and a resolution (in pixels)
+         * calculate the corresponding horizontal field of view (in radians)
+         */
+        public static float CalculateHorizontalFieldOfViewRad(float verticalFieldOfViewRad, Vector2Int resolution)
+        {
+            float aspectRatio = ((float) resolution.x) / ((float) resolution.y);
+            return CalculateHorizontalFieldOfViewRad(verticalFieldOfViewRad, aspectRatio);
+        }
+
+        /**
+         * Given a vertical field of view (in radians)
+         * and an aspect ratio (width / height)
+         * calculate the corresponding horizontal field of view (in radians)
+         */
+        public static float CalculateHorizontalFieldOfViewRad(float verticalFieldOfViewRad, float aspectRatio)
+        {
+            return 2.0f * Mathf.Atan((1.0f / aspectRatio) * Mathf.Tan(verticalFieldOfViewRad * 0.5f));
+        }
     }
 }
