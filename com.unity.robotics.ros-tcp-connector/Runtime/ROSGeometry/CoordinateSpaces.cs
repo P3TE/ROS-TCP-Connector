@@ -14,6 +14,18 @@ namespace Unity.Robotics.ROSTCPConnector.ROSGeometry
 
         Vector3 ConvertAngularVelocityFromRUF(Vector3 angularVelocity); // convert this angular velocity from the Unity coordinate space into mine
         Vector3 ConvertAngularVelocityToRUF(Vector3 angularVelocity); // convert from my coordinate space into the Unity coordinate space
+
+        Vector3 ConvertScaleFromRuf(Vector3 scale)
+        {
+            Vector3 temp = ConvertFromRUF(scale);
+            return new Vector3(Mathf.Abs(temp.x), Mathf.Abs(temp.y), Mathf.Abs(temp.z));
+        }
+
+        Vector3 ConvertScaleToRuf(Vector3 scale)
+        {
+            Vector3 temp = ConvertToRUF(scale);
+            return new Vector3(Mathf.Abs(temp.x), Mathf.Abs(temp.y), Mathf.Abs(temp.z));
+        }
     }
 
     [Obsolete("CoordinateSpace has been renamed to ICoordinateSpace")]
