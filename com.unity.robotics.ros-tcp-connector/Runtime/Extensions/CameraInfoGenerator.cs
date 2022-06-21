@@ -244,7 +244,7 @@ namespace Unity.Robotics.ROSTCPConnector.MessageGeneration
          */
         public static float CalculateVerticalFieldOfViewRad(float horizontalFieldOfViewRad, Vector2Int resolution)
         {
-            float aspectRatio = ((float) resolution.x) / ((float) resolution.y);
+            float aspectRatio = ((float) resolution.y) / ((float) resolution.x);
             return CalculateVerticalFieldOfViewRad(horizontalFieldOfViewRad, aspectRatio);
         }
 
