@@ -244,18 +244,18 @@ namespace Unity.Robotics.ROSTCPConnector.MessageGeneration
          */
         public static float CalculateVerticalFieldOfViewRad(float horizontalFieldOfViewRad, Vector2Int resolution)
         {
-            float aspectRatio = ((float) resolution.y) / ((float) resolution.x);
-            return CalculateVerticalFieldOfViewRad(horizontalFieldOfViewRad, aspectRatio);
+            float heightToWidthRatio = ((float) resolution.y) / ((float) resolution.x);
+            return CalculateVerticalFieldOfViewRad(horizontalFieldOfViewRad, heightToWidthRatio);
         }
 
         /**
          * Given a horizontal field of view (in radians)
-         * and an aspect ratio (width / height)
+         * and a ratio (height / width)
          * calculate the corresponding vertical field of view (in radians)
          */
-        public static float CalculateVerticalFieldOfViewRad(float horizontalFieldOfViewRad, float aspectRatio)
+        public static float CalculateVerticalFieldOfViewRad(float horizontalFieldOfViewRad, float heightToWidthRatio)
         {
-            return 2.0f * Mathf.Atan(aspectRatio * Mathf.Tan(horizontalFieldOfViewRad * 0.5f));
+            return 2.0f * Mathf.Atan(heightToWidthRatio * Mathf.Tan(horizontalFieldOfViewRad * 0.5f));
         }
 
         /**
@@ -265,18 +265,18 @@ namespace Unity.Robotics.ROSTCPConnector.MessageGeneration
          */
         public static float CalculateHorizontalFieldOfViewRad(float verticalFieldOfViewRad, Vector2Int resolution)
         {
-            float aspectRatio = ((float) resolution.x) / ((float) resolution.y);
-            return CalculateHorizontalFieldOfViewRad(verticalFieldOfViewRad, aspectRatio);
+            float widthToHeightRation = ((float) resolution.x) / ((float) resolution.y);
+            return CalculateHorizontalFieldOfViewRad(verticalFieldOfViewRad, widthToHeightRation);
         }
 
         /**
          * Given a vertical field of view (in radians)
-         * and an aspect ratio (width / height)
+         * and a ratio (width / height)
          * calculate the corresponding horizontal field of view (in radians)
          */
-        public static float CalculateHorizontalFieldOfViewRad(float verticalFieldOfViewRad, float aspectRatio)
+        public static float CalculateHorizontalFieldOfViewRad(float verticalFieldOfViewRad, float widthToHeightRatio)
         {
-            return 2.0f * Mathf.Atan((1.0f / aspectRatio) * Mathf.Tan(verticalFieldOfViewRad * 0.5f));
+            return 2.0f * Mathf.Atan(widthToHeightRatio * Mathf.Tan(verticalFieldOfViewRad * 0.5f));
         }
     }
 }
