@@ -458,9 +458,31 @@ namespace Unity.Robotics.ROSTCPConnector
         }
 
         static ROSConnection _instance;
+        static bool applicationQuitCalled = false;
+
+        [RuntimeInitializeOnLoadMethod]
+        static void RunOnStart()
+        {
+            Application.quitting += ApplicationQuitCalled;
+        }
+
+        static void ApplicationQuitCalled()
+        {
+            applicationQuitCalled = true;
+        }
 
         public static ROSConnection GetOrCreateInstance()
         {
+            if (applicationQuitCalled)
+            {
+                /*
+                 * Note: This error message is used to help find incorrect uses of GetOrCreateInstance(),
+                 * otherwise an unspecific error: "Some objects were not cleaned up when closing the scene.
+                 * (Did you spawn new GameObjects from OnDestroy?)". So this will provide a more useful stack trace.
+                 */
+                Debug.LogError("GetOrCreateInstance called after application quit! This is illegal!");
+                return null;
+            }
             if (_instance == null)
             {
                 // Prefer to use the ROSConnection in the scene, if any
