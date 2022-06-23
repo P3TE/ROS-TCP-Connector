@@ -16,6 +16,9 @@ namespace Unity.Robotics.ROSTCPConnector
 {
     public class ROSConnection : MonoBehaviour
     {
+        public const string k_Version = "v0.7.1";
+        public const string k_CompatibleVersionPrefix = "v0.7.";
+
         // Variables required for ROS communication
         [SerializeField]
         [FormerlySerializedAs("hostName")]
@@ -104,6 +107,10 @@ namespace Unity.Robotics.ROSTCPConnector
             ? connectionThreadData.ConnectionState
             : ConnectionThreadState.NotConnected;
 
+        static bool m_HasConnectionError = false;
+        static bool m_HasOutputConnectionError = false;
+        public bool HasConnectionError => m_HasConnectionError;
+
         public int ConnectionAttemptCount => connectionThreadData != null
             ? connectionThreadData.ConnectionAttemptCount
             : 0;
@@ -150,6 +157,7 @@ namespace Unity.Robotics.ROSTCPConnector
         MessageDeserializer m_MessageDeserializer = new MessageDeserializer();
         List<Action<string[]>> m_TopicsListCallbacks = new List<Action<string[]>>();
         List<Action<Dictionary<string, string>>> m_TopicsAndTypesListCallbacks = new List<Action<Dictionary<string, string>>>();
+        List<Action<TimeSpan>> m_PingCallbacks = new List<Action<TimeSpan>>();
         List<Action<RosTopicState>> m_NewTopicCallbacks = new List<Action<RosTopicState>>();
 
         Dictionary<string, RosTopicState> m_Topics = new Dictionary<string, RosTopicState>();
@@ -696,6 +704,32 @@ namespace Unity.Robotics.ROSTCPConnector
         {
             switch (topic)
             {
+                case SysCommand.k_SysCommand_Handshake:
+                    {
+                        var handshakeCommand = JsonUtility.FromJson<SysCommand_Handshake>(json);
+                        if (handshakeCommand.version == null)
+                        {
+                            Debug.LogError($"Corrupted or unreadable ROS-TCP-Endpoint version data! Expected: {k_Version}");
+                        }
+                        else if (!handshakeCommand.version.StartsWith(k_CompatibleVersionPrefix))
+                        {
+                            Debug.LogError($"Incompatible ROS-TCP-Endpoint version: {handshakeCommand.version}. Expected: {k_Version}");
+                        }
+
+                        var handshakeMetadata = JsonUtility.FromJson<SysCommand_Handshake_Metadata>(handshakeCommand.metadata);
+#if ROS2
+                        if (handshakeMetadata.protocol != "ROS2")
+                        {
+                            Debug.LogError($"Incompatible protocol: ROS-TCP-Endpoint is using {handshakeMetadata.protocol}, but Unity is in ROS2 mode. Switch it from the Robotics/Ros Settings menu.");
+                        }
+#else
+                        if (handshakeMetadata.protocol != "ROS1")
+                        {
+                            Debug.LogError($"Incompatible protocol: ROS-TCP-Endpoint is using {handshakeMetadata.protocol}, but Unity is in ROS1 mode. Switch it from the Robotics/Ros Settings menu.");
+                        }
+#endif
+                    }
+                    break;
                 case SysCommand.k_SysCommand_Log:
                     {
                         var logCommand = JsonUtility.FromJson<SysCommand_Log>(json);
@@ -774,6 +808,18 @@ namespace Unity.Robotics.ROSTCPConnector
                         {
                             m_TopicsListCallbacks.ForEach(a => a(topicsResponse.topics));
                             m_TopicsListCallbacks.Clear();
+                        }
+                    }
+                    break;
+
+                case SysCommand.k_SysCommand_PingResponse:
+                    {
+                        var pingResponse = JsonUtility.FromJson<SysCommand_PingResponse>(json);
+                        if (m_PingCallbacks.Count > 0)
+                        {
+                            TimeSpan roundTripTime = DateTime.UtcNow - DateTime.Parse(pingResponse.request_time, null, System.Globalization.DateTimeStyles.RoundtripKind);
+                            m_PingCallbacks.ForEach(a => a(roundTripTime));
+                            m_PingCallbacks.Clear();
                         }
                     }
                     break;
@@ -893,6 +939,12 @@ namespace Unity.Robotics.ROSTCPConnector
                     connectionInfo.IncrementReaderIdx();
                     _ = Task.Run(() => ReaderThread(connectionInfo, readerCancellation.Token));
 
+                    if (m_HasOutputConnectionError)
+                    {
+                        Debug.Log($"ROS Connection to {rosIPAddress}:{rosPort} succeeded!");
+                        m_HasOutputConnectionError = false;
+                    }
+
                     // connected, now just watch our queue for outgoing messages to send (or else send a keepalive message occasionally)
                     float waitingSinceRealTime = s_RealTimeSinceStartup;
                     while (true)
@@ -971,8 +1023,14 @@ namespace Unity.Robotics.ROSTCPConnector
                     {
                         Debug.Log($"Connection to {connectionInfo.RosIPAddress}:{connectionInfo.RosPort} failed - " + e);
                     }
-                    await Task.Delay(nextReconnectionDelay);
+                    ROSConnection.m_HasConnectionError = true;
+                    if (!m_HasOutputConnectionError)
+                    {
+                        Debug.LogError($"ROS Connection to {rosIPAddress}:{rosPort} failed - " + e);
+                        m_HasOutputConnectionError = true;
+                    }
                     connectionInfo.Error = e;
+                    await Task.Delay(nextReconnectionDelay);
                 }
                 finally
                 {
@@ -993,6 +1051,18 @@ namespace Unity.Robotics.ROSTCPConnector
 
         static async Task ReaderThread(ConnectionThreadData connectionInfo, CancellationToken readerCancellationToken)
         {
+            // First message should be the handshake
+            Tuple<string, byte[]> handshakeContent = await ReadMessageContents(networkStream, sleepMilliseconds, token);
+            if (handshakeContent.Item1 == SysCommand.k_SysCommand_Handshake)
+            {
+                ROSConnection.m_HasConnectionError = false;
+                queue.Enqueue(handshakeContent);
+            }
+            else
+            {
+                Debug.LogError($"Invalid ROS-TCP-Endpoint version detected: 0.6.0 or older. Expected: {k_Version}.");
+            }
+
             while (!readerCancellationToken.IsCancellationRequested)
             {
                 try
@@ -1001,6 +1071,7 @@ namespace Unity.Robotics.ROSTCPConnector
                     // Debug.Log($"Message {content.Item1} received");
                     connectionInfo.ConnectionState = ConnectionThreadState.Connected;
                     connectionInfo.Error = null;
+                    ROSConnection.m_HasConnectionError = false;
 
                     if (content.Item1 != "") // ignore keepalive messages
                         connectionInfo.IncomingQueue.Enqueue(content);
@@ -1070,6 +1141,14 @@ namespace Unity.Robotics.ROSTCPConnector
                 SendSysCommandImmediate(command, param, stream);
             else
                 QueueSysCommand(command, param);
+        }
+
+        public void Ping(Action<TimeSpan> callback)
+        {
+            m_PingCallbacks.Add(callback);
+
+            string time8601 = DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture);
+            SendSysCommand("__ping", new SysCommand_PingRequest { request_time = time8601 });
         }
 
         static void PopulateSysCommand(MessageSerializer messageSerializer, string command, object param)
@@ -1153,12 +1232,11 @@ namespace Unity.Robotics.ROSTCPConnector
                 alignment = TextAnchor.MiddleLeft,
                 padding = new RectOffset(10, 0, 0, 5),
                 normal = { textColor = Color.white },
-                fixedWidth = 300
             };
 
 
             // ROS IP Setup
-            GUILayout.BeginHorizontal();
+            GUILayout.BeginHorizontal(GUILayout.Width(300));
             DrawConnectionArrows(
                 true,
                 0,
