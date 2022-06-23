@@ -107,9 +107,7 @@ namespace Unity.Robotics.ROSTCPConnector
             ? connectionThreadData.ConnectionState
             : ConnectionThreadState.NotConnected;
 
-        static bool m_HasConnectionError = false;
         static bool m_HasOutputConnectionError = false;
-        public bool HasConnectionError => m_HasConnectionError;
 
         public int ConnectionAttemptCount => connectionThreadData != null
             ? connectionThreadData.ConnectionAttemptCount
@@ -941,7 +939,7 @@ namespace Unity.Robotics.ROSTCPConnector
 
                     if (m_HasOutputConnectionError)
                     {
-                        Debug.Log($"ROS Connection to {rosIPAddress}:{rosPort} succeeded!");
+                        Debug.Log($"ROS Connection to {connectionInfo.RosIPAddress}:{connectionInfo.RosPort} succeeded!");
                         m_HasOutputConnectionError = false;
                     }
 
@@ -1023,10 +1021,10 @@ namespace Unity.Robotics.ROSTCPConnector
                     {
                         Debug.Log($"Connection to {connectionInfo.RosIPAddress}:{connectionInfo.RosPort} failed - " + e);
                     }
-                    ROSConnection.m_HasConnectionError = true;
+                    connectionInfo.Error = e;
                     if (!m_HasOutputConnectionError)
                     {
-                        Debug.LogError($"ROS Connection to {rosIPAddress}:{rosPort} failed - " + e);
+                        Debug.LogError($"ROS Connection to {connectionInfo.RosIPAddress}:{connectionInfo.RosPort} failed - " + e);
                         m_HasOutputConnectionError = true;
                     }
                     connectionInfo.Error = e;
@@ -1052,11 +1050,11 @@ namespace Unity.Robotics.ROSTCPConnector
         static async Task ReaderThread(ConnectionThreadData connectionInfo, CancellationToken readerCancellationToken)
         {
             // First message should be the handshake
-            Tuple<string, byte[]> handshakeContent = await ReadMessageContents(networkStream, sleepMilliseconds, token);
+            Tuple<string, byte[]> handshakeContent = await ReadMessageContents(connectionInfo.NetworkStream, connectionInfo.SleepMilliseconds, readerCancellationToken);
             if (handshakeContent.Item1 == SysCommand.k_SysCommand_Handshake)
             {
-                ROSConnection.m_HasConnectionError = false;
-                queue.Enqueue(handshakeContent);
+                connectionInfo.Error = null;
+                connectionInfo.IncomingQueue.Enqueue(handshakeContent);
             }
             else
             {
@@ -1071,7 +1069,6 @@ namespace Unity.Robotics.ROSTCPConnector
                     // Debug.Log($"Message {content.Item1} received");
                     connectionInfo.ConnectionState = ConnectionThreadState.Connected;
                     connectionInfo.Error = null;
-                    ROSConnection.m_HasConnectionError = false;
 
                     if (content.Item1 != "") // ignore keepalive messages
                         connectionInfo.IncomingQueue.Enqueue(content);
