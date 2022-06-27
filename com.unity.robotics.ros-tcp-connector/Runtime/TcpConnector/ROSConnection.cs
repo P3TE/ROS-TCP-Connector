@@ -576,7 +576,7 @@ namespace Unity.Robotics.ROSTCPConnector
                 topics = AllTopics.ToArray();
             }
 
-            foreach (RosTopicState topicInfo in m_Topics.Values.ToArray())
+            foreach (RosTopicState topicInfo in topics)
                 topicInfo.OnConnectionEstablished(stream);
 
             RefreshTopicsList();
