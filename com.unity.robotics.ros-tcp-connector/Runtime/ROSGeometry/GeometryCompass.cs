@@ -64,6 +64,39 @@ namespace Unity.Robotics.ROSTCPConnector.ROSGeometry
 #endif
         }
 
+        /**
+         * Examples:
+         * Input = 0 (North), GeometryCompass.UnityZAxisDirection = North, Output = 0
+         * Input = 0 (North), GeometryCompass.UnityZAxisDirection = East, Output = -90
+         * Input = 0 (North), GeometryCompass.UnityZAxisDirection = South, Output = 180
+         * Input = 0 (North), GeometryCompass.UnityZAxisDirection = West, Output = 90
+         * Input = 90 (East), GeometryCompass.UnityZAxisDirection = North, Output = 90
+         * Input = 90 (East), GeometryCompass.UnityZAxisDirection = East, Output = 0
+         * Input = 90 (East), GeometryCompass.UnityZAxisDirection = South, Output = -90
+         * Input = 90 (East), GeometryCompass.UnityZAxisDirection = West, Output = 180
+         */
+        public static float ToUnityGlobalYawDegrees(float headingFromNorthTowardsEastDegrees)
+        {
+            float offsetRotationDegrees = CardinalDirection.North.ToUnityYawDegrees();
+            return headingFromNorthTowardsEastDegrees + offsetRotationDegrees;
+        }
+
+        public static float ToUnityGlobalYawRadians(float headingFromNorthTowardsEastRadians)
+        {
+            return Mathf.Deg2Rad * ToUnityGlobalYawDegrees(Mathf.Rad2Deg * headingFromNorthTowardsEastRadians);
+        }
+
+        public static float FromUnityGlobalYawDegrees(float unityGlobalYawDegrees)
+        {
+            float offsetRotationDegrees = CardinalDirection.North.ToUnityYawDegrees();
+            return unityGlobalYawDegrees - offsetRotationDegrees;
+        }
+
+        public static float FromUnityGlobalYawRadians(float unityGlobalYawRadians)
+        {
+            return Mathf.Deg2Rad * FromUnityGlobalYawDegrees(Mathf.Rad2Deg * unityGlobalYawRadians);
+        }
+
         public static readonly Quaternion k_NinetyYaw = Quaternion.Euler(0, 90, 0);
         public static readonly Quaternion k_OneEightyYaw = Quaternion.Euler(0, 180, 0);
         public static readonly Quaternion k_NegativeNinetyYaw = Quaternion.Euler(0, -90, 0);

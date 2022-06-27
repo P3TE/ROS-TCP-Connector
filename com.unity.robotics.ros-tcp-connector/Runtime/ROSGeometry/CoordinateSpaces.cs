@@ -12,6 +12,9 @@ namespace Unity.Robotics.ROSTCPConnector.ROSGeometry
         Quaternion ConvertFromRUF(Quaternion q); // convert this quaternion from the Unity coordinate space into mine
         Quaternion ConvertToRUF(Quaternion q); // convert from my coordinate space into the Unity coordinate space
 
+        float ConvertYawRadiansFromRUF(float yawRadians); // convert this yaw from the Unity coordinate space into mine
+        float ConvertYawRadiansToRUF(float yawRadians) => ConvertYawRadiansFromRUF(yawRadians); //Note: For most (but not all) implementations ConvertYawRadiansFromRUF = ConvertYawRadiansToRUF
+
         Vector3 ConvertAngularVelocityFromRUF(Vector3 angularVelocity); // convert this angular velocity from the Unity coordinate space into mine
         Vector3 ConvertAngularVelocityToRUF(Vector3 angularVelocity); // convert from my coordinate space into the Unity coordinate space
 
@@ -45,6 +48,7 @@ namespace Unity.Robotics.ROSTCPConnector.ROSGeometry
         Vector3 ICoordinateSpace.ConvertToRUF(Vector3 v) => v;
         Quaternion ICoordinateSpace.ConvertFromRUF(Quaternion q) => q;
         Quaternion ICoordinateSpace.ConvertToRUF(Quaternion q) => q;
+        float ICoordinateSpace.ConvertYawRadiansFromRUF(float yawRadians) => yawRadians;
         Vector3 ICoordinateSpace.ConvertAngularVelocityFromRUF(Vector3 angularVelocity) => angularVelocity;
         Vector3 ICoordinateSpace.ConvertAngularVelocityToRUF(Vector3 angularVelocity) => angularVelocity;
         Vector3Int ICoordinateSpace.RollPitchYawAxes => new Vector3Int(2, 0, 1);
@@ -56,6 +60,8 @@ namespace Unity.Robotics.ROSTCPConnector.ROSGeometry
         public static Vector3 ConvertToRUF(Vector3 v) => new Vector3(-v.y, v.z, v.x);
         public static Quaternion ConvertFromRUF(Quaternion q) => new Quaternion(q.z, -q.x, q.y, -q.w);
         public static Quaternion ConvertToRUF(Quaternion q) => new Quaternion(-q.y, q.z, q.x, -q.w);
+        public static float ConvertYawRadiansFromRUF(float yawRadians) => -yawRadians;
+        public static float ConvertYawRadiansToRUF(float yawRadians) => -yawRadians;
         public static Vector3 ConvertAngularVelocityFromRUF(Vector3 angularVelocity) => -FLU.ConvertFromRUF(angularVelocity);
         public static Vector3 ConvertAngularVelocityToRUF(Vector3 angularVelocity) => -FLU.ConvertToRUF(angularVelocity);
         public static Vector3Int RollPitchYawAxes => new Vector3Int(0, 1, 2);
@@ -64,6 +70,7 @@ namespace Unity.Robotics.ROSTCPConnector.ROSGeometry
         Vector3 ICoordinateSpace.ConvertToRUF(Vector3 v) => FLU.ConvertToRUF(v);
         Quaternion ICoordinateSpace.ConvertFromRUF(Quaternion q) => FLU.ConvertFromRUF(q);
         Quaternion ICoordinateSpace.ConvertToRUF(Quaternion q) => FLU.ConvertToRUF(q);
+        float ICoordinateSpace.ConvertYawRadiansFromRUF(float yawRadians) => ConvertYawRadiansFromRUF(yawRadians);
         Vector3 ICoordinateSpace.ConvertAngularVelocityFromRUF(Vector3 angularVelocity) => FLU.ConvertAngularVelocityFromRUF(angularVelocity);
         Vector3 ICoordinateSpace.ConvertAngularVelocityToRUF(Vector3 angularVelocity) => FLU.ConvertAngularVelocityToRUF(angularVelocity);
         Vector3Int ICoordinateSpace.RollPitchYawAxes => RollPitchYawAxes;
@@ -77,6 +84,8 @@ namespace Unity.Robotics.ROSTCPConnector.ROSGeometry
         public static Vector3 ConvertToRUF(Vector3 v) => new Vector3(v.y, -v.z, v.x);
         public static Quaternion ConvertFromRUF(Quaternion q) => new Quaternion(q.z, q.x, -q.y, -q.w);
         public static Quaternion ConvertToRUF(Quaternion q) => new Quaternion(q.y, -q.z, q.x, -q.w);
+        public static float ConvertYawRadiansFromRUF(float yawRadians) => yawRadians;
+        public static float ConvertYawRadiansToRUF(float yawRadians) => yawRadians;
         public static Vector3 ConvertAngularVelocityFromRUF(Vector3 angularVelocity) => -ConvertFromRUF(angularVelocity);
         public static Vector3 ConvertAngularVelocityToRUF(Vector3 angularVelocity) => -ConvertToRUF(angularVelocity);
         public static Vector3Int RollPitchYawAxes => new Vector3Int(0, 1, 2);
@@ -85,6 +94,7 @@ namespace Unity.Robotics.ROSTCPConnector.ROSGeometry
         Vector3 ICoordinateSpace.ConvertToRUF(Vector3 v) => FRD.ConvertToRUF(v);
         Quaternion ICoordinateSpace.ConvertFromRUF(Quaternion q) => FRD.ConvertFromRUF(q);
         Quaternion ICoordinateSpace.ConvertToRUF(Quaternion q) => FRD.ConvertToRUF(q);
+        float ICoordinateSpace.ConvertYawRadiansFromRUF(float yawRadians) => FRD.ConvertYawRadiansFromRUF(yawRadians);
         Vector3 ICoordinateSpace.ConvertAngularVelocityFromRUF(Vector3 angularVelocity) => FRD.ConvertAngularVelocityFromRUF(angularVelocity);
         Vector3 ICoordinateSpace.ConvertAngularVelocityToRUF(Vector3 angularVelocity) => FRD.ConvertAngularVelocityToRUF(angularVelocity);
         Vector3Int ICoordinateSpace.RollPitchYawAxes => RollPitchYawAxes;
@@ -167,10 +177,25 @@ namespace Unity.Robotics.ROSTCPConnector.ROSGeometry
                     throw new NotSupportedException();
             }
         }
+
+        public static float ConvertYawRadiansFromRUF(float yawRadians)
+        {
+            float offsetRadians = Mathf.Deg2Rad * CardinalDirection.North.ToUnityYawDegrees();
+            return FRD.ConvertYawRadiansFromRUF(yawRadians) - offsetRadians;
+        }
+
+        public static float ConvertYawRadiansToRUF(float yawRadians)
+        {
+            float offsetRadians = Mathf.Deg2Rad * CardinalDirection.North.ToUnityYawDegrees();
+            return FRD.ConvertYawRadiansToRUF(yawRadians) + offsetRadians;
+        }
+
         Vector3 ICoordinateSpace.ConvertFromRUF(Vector3 v) => NED.ConvertFromRUF(v);
         Vector3 ICoordinateSpace.ConvertToRUF(Vector3 v) => NED.ConvertToRUF(v);
         Quaternion ICoordinateSpace.ConvertFromRUF(Quaternion q) => NED.ConvertFromRUF(q);
         Quaternion ICoordinateSpace.ConvertToRUF(Quaternion q) => NED.ConvertToRUF(q);
+        float ICoordinateSpace.ConvertYawRadiansFromRUF(float yawRadians) => NED.ConvertYawRadiansFromRUF(yawRadians);
+        float ICoordinateSpace.ConvertYawRadiansToRUF(float yawRadians) => NED.ConvertYawRadiansToRUF(yawRadians);
         //Note: Angular Velocity is the same as FRD / NEDLocal
         Vector3 ICoordinateSpace.ConvertAngularVelocityFromRUF(Vector3 angularVelocity) => FRD.ConvertAngularVelocityFromRUF(angularVelocity);
         Vector3 ICoordinateSpace.ConvertAngularVelocityToRUF(Vector3 angularVelocity) => FRD.ConvertAngularVelocityToRUF(angularVelocity);
@@ -252,10 +277,21 @@ namespace Unity.Robotics.ROSTCPConnector.ROSGeometry
             }
         }
 
+        public static float ConvertYawRadiansFromRUF(float yawRadians)
+        {
+            float offsetRadians = Mathf.Deg2Rad * CardinalDirection.East.ToUnityYawDegrees();
+            return FLU.ConvertYawRadiansFromRUF(yawRadians) + offsetRadians;
+        }
+
+        public static float ConvertYawRadiansToRUF(float yawRadians) => ConvertYawRadiansFromRUF(yawRadians);
+
         Vector3 ICoordinateSpace.ConvertFromRUF(Vector3 v) => ENU.ConvertFromRUF(v);
         Vector3 ICoordinateSpace.ConvertToRUF(Vector3 v) => ENU.ConvertToRUF(v);
         Quaternion ICoordinateSpace.ConvertFromRUF(Quaternion q) => ENU.ConvertFromRUF(q);
         Quaternion ICoordinateSpace.ConvertToRUF(Quaternion q) => ENU.ConvertToRUF(q);
+        float ICoordinateSpace.ConvertYawRadiansFromRUF(float yawRadians) => ENU.ConvertYawRadiansFromRUF(yawRadians);
+        float ICoordinateSpace.ConvertYawRadiansToRUF(float yawRadians) => ENU.ConvertYawRadiansToRUF(yawRadians);
+
         //Note: Angular Velocity is the same as FLU / ENULocal
         Vector3 ICoordinateSpace.ConvertAngularVelocityFromRUF(Vector3 angularVelocity) => FLU.ConvertAngularVelocityFromRUF(angularVelocity);
         Vector3 ICoordinateSpace.ConvertAngularVelocityToRUF(Vector3 angularVelocity) => FLU.ConvertAngularVelocityToRUF(angularVelocity);
