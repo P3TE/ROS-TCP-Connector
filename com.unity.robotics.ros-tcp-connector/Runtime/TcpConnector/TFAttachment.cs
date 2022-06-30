@@ -15,7 +15,7 @@ namespace Unity.Robotics.ROSTCPConnector
 
         void Start()
         {
-            transform.parent = TFSystem.GetOrCreateInstance().GetTransformObject(m_FrameID, m_TFTopic).transform;
+            transform.parent = TFSystem.GetTransformObject(m_FrameID, m_TFTopic).transform;
             transform.localPosition = Vector3.zero;
             transform.localRotation = Quaternion.identity;
         }
