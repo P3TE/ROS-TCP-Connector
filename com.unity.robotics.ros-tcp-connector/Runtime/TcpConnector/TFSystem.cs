@@ -25,7 +25,7 @@ public class TFSystem
             ROSConnection.GetOrCreateInstance().Subscribe<TFMessageMsg>(tfTopic, ReceiveTF);
         }
 
-        public TFStream GetOrCreateFrame(string frame_id)
+        public TFStream GetOrCreateFrameOld(string frame_id)
         {
             TFStream tf;
             while (frame_id.EndsWith("/"))
@@ -43,7 +43,7 @@ public class TFSystem
                 }
                 else
                 {
-                    var parent = GetOrCreateFrame(frame_id.Substring(0, slash));
+                    var parent = GetOrCreateFrameOld(frame_id.Substring(0, slash));
                     tf = new TFStream(parent, singleName, m_TFTopic);
                 }
 
@@ -52,24 +52,87 @@ public class TFSystem
             }
             else if (slash > 0 && tf.Parent == null)
             {
-                tf.SetParent(GetOrCreateFrame(frame_id.Substring(0, slash)));
+                tf.SetParent(GetOrCreateFrameOld(frame_id.Substring(0, slash)));
             }
 
             return tf;
+        }
+
+        public TFStream GetOrCreateFrame(string frame_id)
+        {
+            TFStream tf;
+            string frameIdTrimmed = RemoveLeadingAndTrailingSlashes(frame_id);
+            if (!m_TransformTable.TryGetValue(frameIdTrimmed, out tf) || tf == null)
+            {
+                tf = new TFStream(null, frameIdTrimmed, m_TFTopic);
+                m_TransformTable[frameIdTrimmed] = tf;
+                NotifyChanged(tf);
+            }
+            return tf;
+        }
+
+        public static string RemoveLeadingAndTrailingSlashes(string rawString)
+        {
+            if (rawString == null)
+            {
+                return "";
+            }
+            string trimmedModelName = rawString.Trim();
+
+            int startIndex = 0;
+            int endIndex = trimmedModelName.Length;
+
+            for (var i = 0; i < trimmedModelName.Length; i++)
+            {
+                char c = trimmedModelName[i];
+                if (c == '/')
+                {
+                    startIndex++;
+                }
+                else
+                {
+                    break;
+                }
+            }
+
+            for (var i = trimmedModelName.Length - 1; i >= 0; i--)
+            {
+                char c = trimmedModelName[i];
+                if (c == '/')
+                {
+                    endIndex--;
+                }
+                else
+                {
+                    break;
+                }
+            }
+
+            if (startIndex > endIndex)
+            {
+                return "";
+            }
+
+            return trimmedModelName.Substring(startIndex, endIndex - startIndex);
         }
 
         public void ReceiveTF(TFMessageMsg message)
         {
             foreach (var tf_message in message.transforms)
             {
-                var frame_id = tf_message.header.frame_id + "/" + tf_message.child_frame_id;
-                var tf = GetOrCreateFrame(frame_id);
-                tf.Add(
+
+                TFStream childTf = GetOrCreateFrame(tf_message.child_frame_id);
+                TFStream parentTf = GetOrCreateFrame(tf_message.header.frame_id);
+
+                childTf.SetParent(parentTf);
+
+                childTf.Add(
                     tf_message.header.stamp.ToLongTime(),
                     tf_message.transform.translation.From<FLU>(),
                     tf_message.transform.rotation.From<FLU>()
                 );
-                NotifyChanged(tf);
+
+                NotifyChanged(childTf);
             }
         }
 
