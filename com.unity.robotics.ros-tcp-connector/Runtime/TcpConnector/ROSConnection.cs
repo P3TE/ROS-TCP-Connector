@@ -59,7 +59,12 @@ namespace Unity.Robotics.ROSTCPConnector
 
         [SerializeField]
         string[] m_TFTopics = { "/tf" };
+
+        [SerializeField] private bool subscribeToTfStatic = true;
+
         public string[] TFTopics { get => m_TFTopics; set => m_TFTopics = value; }
+
+        public bool SubscribeToTfStatic => subscribeToTfStatic;
 
         const int k_DefaultPublisherQueueSize = 10;
         const bool k_DefaultPublisherLatch = false;

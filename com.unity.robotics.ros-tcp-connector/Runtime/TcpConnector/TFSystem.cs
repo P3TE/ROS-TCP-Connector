@@ -12,50 +12,26 @@ public class TFSystem
 {
     public static TFSystem instance { get; private set; }
     Dictionary<string, TFTopicState> m_TFTopics = new Dictionary<string, TFTopicState>();
+    private static TFTopicState tfTopicState = null;
 
     public class TFTopicState
     {
+        private const string _StaticPostfix = "_static";
+
         string m_TFTopic;
+        string m_TFTopic_static;
         Dictionary<string, TFStream> m_TransformTable = new Dictionary<string, TFStream>();
         List<Action<TFStream>> m_Listeners = new List<Action<TFStream>>();
 
-        public TFTopicState(string tfTopic = "/tf")
+        public TFTopicState(string tfTopic = "/tf", bool subscribeToStatic = true)
         {
             m_TFTopic = tfTopic;
             ROSConnection.GetOrCreateInstance().Subscribe<TFMessageMsg>(tfTopic, ReceiveTF);
-        }
-
-        public TFStream GetOrCreateFrameOld(string frame_id)
-        {
-            TFStream tf;
-            while (frame_id.EndsWith("/"))
-                frame_id = frame_id.Substring(0, frame_id.Length - 1);
-
-            var slash = frame_id.LastIndexOf('/');
-            var singleName = slash == -1 ? frame_id : frame_id.Substring(slash + 1);
-            if (!m_TransformTable.TryGetValue(singleName, out tf) || tf == null)
+            if (subscribeToStatic)
             {
-                if (slash <= 0)
-                {
-                    // there's no slash, or only an initial slash - just create a new root object
-                    // (set the parent later if and when we learn more)
-                    tf = new TFStream(null, singleName, m_TFTopic);
-                }
-                else
-                {
-                    var parent = GetOrCreateFrameOld(frame_id.Substring(0, slash));
-                    tf = new TFStream(parent, singleName, m_TFTopic);
-                }
-
-                m_TransformTable[singleName] = tf;
-                NotifyChanged(tf);
+                m_TFTopic_static = $"{tfTopic}{_StaticPostfix}";
+                ROSConnection.GetOrCreateInstance().Subscribe<TFMessageMsg>(m_TFTopic_static, ReceiveTF);
             }
-            else if (slash > 0 && tf.Parent == null)
-            {
-                tf.SetParent(GetOrCreateFrameOld(frame_id.Substring(0, slash)));
-            }
-
-            return tf;
         }
 
         public TFStream GetOrCreateFrame(string frame_id)
@@ -187,7 +163,7 @@ public class TFSystem
         instance = new TFSystem();
         foreach (string s in ros.TFTopics)
         {
-            instance.GetOrCreateTFTopic(s);
+            instance.GetOrCreateTFTopic(s, ros.SubscribeToTfStatic);
         }
         return instance;
     }
@@ -244,12 +220,12 @@ public class TFSystem
         return stream.GameObject;
     }
 
-    public TFTopicState GetOrCreateTFTopic(string tfTopic = "/tf")
+    public TFTopicState GetOrCreateTFTopic(string tfTopic = "/tf", bool subscribeToStatic = true)
     {
         TFTopicState tfTopicState;
         if (!m_TFTopics.TryGetValue(tfTopic, out tfTopicState))
         {
-            tfTopicState = new TFTopicState(tfTopic);
+            tfTopicState = new TFTopicState(tfTopic, subscribeToStatic);
             m_TFTopics[tfTopic] = tfTopicState;
         }
         return tfTopicState;
