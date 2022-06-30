@@ -1,7 +1,8 @@
-using RosMessageTypes.BuiltinInterfaces;
 using System.Collections.Generic;
+using RosMessageTypes.BuiltinInterfaces;
 using Unity.Robotics.ROSTCPConnector.MessageGeneration;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 // Represents a transform - position and rotation.
 //(Like the Unity Transform class, but without the GameObject baggage that comes with it.)
@@ -46,6 +47,9 @@ public struct TFFrame
 public class TFStream
 {
     public string Name { get; private set; }
+
+    private string m_Namespace = null;
+    public string Namespace => m_Namespace ??= Name.Split('/')[0];
     public string TFTopic { get; private set; }
     public TFStream Parent { get; private set; }
     public IEnumerable<TFStream> Children => m_Children;
@@ -59,6 +63,20 @@ public class TFStream
     // a gameobject at the last known position of this tfstream
     GameObject m_GameObject;
     public GameObject GameObject => m_GameObject;
+
+    private Transform m_SimulatedTransform;
+    public Transform SimulatedTransform
+    {
+        get
+        {
+            if (m_SimulatedTransform == null)
+            {
+                FindSimulatedTransform();
+            }
+
+            return m_SimulatedTransform;
+        }
+    }
 
     public TFStream(TFStream parent, string name, string tfTopic)
     {
@@ -195,5 +213,53 @@ public class TFStream
             return false;
 
         return true;
+    }
+
+    private void FindSimulatedTransform()
+    {
+        if (m_SimulatedTransform != null)
+        {
+            return;
+        }
+
+        Scene scene = SceneManager.GetActiveScene();
+        GameObject[] rootGameObjects = scene.GetRootGameObjects();
+
+        foreach (GameObject rootGameObject in rootGameObjects)
+        {
+            if (rootGameObject.name == Namespace)
+            {
+                m_SimulatedTransform = SearchHierarchy(rootGameObject.transform, Name);
+
+                if (m_SimulatedTransform != null)
+                {
+                    break;
+                }
+            }
+        }
+    }
+
+    private static Transform SearchHierarchy(Transform transform, string targetName)
+    {
+        LinkedList<Transform> searchTransforms = new LinkedList<Transform>();
+        searchTransforms.AddLast(transform);
+
+        while (searchTransforms.Count > 0)
+        {
+            Transform current = searchTransforms.First.Value;
+            searchTransforms.RemoveFirst();
+
+            if (current.name == targetName)
+            {
+                return current;
+            }
+
+            foreach (Transform child in current)
+            {
+                searchTransforms.AddLast(child);
+            }
+        }
+
+        return null;
     }
 }
