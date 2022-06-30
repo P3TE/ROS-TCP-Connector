@@ -260,8 +260,11 @@ namespace Unity.Robotics.ROSTCPConnector
                 m_ConnectionInternal.SendPublisherRegistration(m_Topic, m_RosMessageName, m_MessageSender.QueueSize, IsPublisherLatched, stream);
                 if (IsPublisherLatched)
                 {
-                    m_MessageSender.PrepareLatchMessage();
-                    m_ConnectionInternal.AddSenderToQueue(m_MessageSender);
+                    if (m_MessageSender.PrepareLatchMessage())
+                    {
+                        //Only add to the queue if there is something to send.
+                        m_ConnectionInternal.AddSenderToQueue(m_MessageSender);
+                    }
                 }
             }
 

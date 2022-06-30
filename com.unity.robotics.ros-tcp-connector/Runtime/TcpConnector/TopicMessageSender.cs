@@ -125,19 +125,23 @@ namespace Unity.Robotics.ROSTCPConnector
             messageSerializer.SendTo(stream);
         }
 
-        public void PrepareLatchMessage()
+        public bool PrepareLatchMessage()
         {
             if (m_LastMessageSent != null && !m_OutgoingMessages.Any())
             {
                 //This topic is latching, so to mimic that functionality,
                 // the last sent message is sent again with the new connection.
                 m_OutgoingMessages.AddFirst(m_LastMessageSent);
+                return true;
             }
+
+            return false;
         }
 
         public override SendToState SendInternal(MessageSerializer messageSerializer, Stream stream)
         {
             SendToState sendToState = GetMessageToSend(out Message toSend);
+            Debug.Log($"toSend RosMessageName={RosMessageName} TopicName={TopicName}");
             if (sendToState == SendToState.Normal)
             {
                 SendMessageWithStream(messageSerializer, stream, toSend);
@@ -160,6 +164,23 @@ namespace Unity.Robotics.ROSTCPConnector
             lock (m_OutgoingMessages)
             {
                 toRecycle = new List<Message>(m_OutgoingMessages);
+
+                Message lastMessage = m_LastMessageSent;
+                if (toRecycle.Count > 0)
+                {
+                    int lastIndex = toRecycle.Count - 1;
+                    m_LastMessageSent = toRecycle[lastIndex];
+                    toRecycle.RemoveAt(lastIndex);
+                }
+
+                if (lastMessage != null && m_LastMessageSent != lastMessage)
+                {
+                    if (!toRecycle.Contains(lastMessage))
+                    {
+                        toRecycle.Add(lastMessage);
+                    }
+                }
+
                 m_OutgoingMessages.Clear();
                 m_QueueOverflowUnsentCounter = 0;
             }
