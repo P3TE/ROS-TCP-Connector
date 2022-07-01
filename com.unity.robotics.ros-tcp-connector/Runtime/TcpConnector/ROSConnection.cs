@@ -581,6 +581,8 @@ namespace Unity.Robotics.ROSTCPConnector
                 topics = AllTopics.ToArray();
             }
 
+            ClearMessageQueue(connectionThreadData.OutgoingQueue);
+
             foreach (RosTopicState topicInfo in topics)
                 topicInfo.OnConnectionEstablished(stream);
 
