@@ -98,6 +98,12 @@ namespace Unity.Robotics.ROSTCPConnector
         static bool m_HasOutputConnectionError = false;
         public bool HasConnectionError => m_HasConnectionError;
 
+        public bool HasActiveConnection
+        {
+            get;
+            private set;
+        }
+
         // only the main thread can access Time.*, so make a copy here
         public static float s_RealTimeSinceStartup = 0.0f;
 
@@ -533,6 +539,8 @@ namespace Unity.Robotics.ROSTCPConnector
                 topicInfo.OnConnectionEstablished(stream);
 
             RefreshTopicsList();
+
+            HasActiveConnection = true;
         }
 
         void OnConnectionLostCallback()
@@ -548,6 +556,8 @@ namespace Unity.Robotics.ROSTCPConnector
                 //For all publishers, notify that they need to re-register.
                 topicInfo.OnConnectionLost();
             }
+
+            HasActiveConnection = false;
         }
 
         public void Disconnect()

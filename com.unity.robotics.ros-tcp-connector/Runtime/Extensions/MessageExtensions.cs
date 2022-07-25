@@ -498,6 +498,7 @@ namespace Unity.Robotics.ROSTCPConnector.MessageGeneration
                 case "16UC1":
                 case "16SC1":
                     return TextureFormat.R16;
+#if UNITY_2020_2_OR_NEWER
                 case "16UC2":
                 case "16SC2":
                     return TextureFormat.RG32;
@@ -511,6 +512,7 @@ namespace Unity.Robotics.ROSTCPConnector.MessageGeneration
                 case "32SC2":
                 case "32SC3":
                 case "32SC4":
+#endif
                     // TODO: Experimental.Rendering.GraphicsFormat.R32_SInt
                     throw new NotImplementedException("32 bit integer texture formats are not supported");
                 case "32FC1":
