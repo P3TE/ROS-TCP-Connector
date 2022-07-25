@@ -13,6 +13,12 @@ namespace Unity.Robotics.ROSTCPConnector.MessageGeneration
         int alignmentCorrection;
 #endif
 
+        public Message DeserializeMessage(string rosMessageName, byte[] data, MessageSubtopic subtopic = MessageSubtopic.Default)
+        {
+            InitWithBuffer(data);
+            return MessageRegistry.GetDeserializeFunction(rosMessageName, subtopic)(this);
+        }
+
         public T DeserializeMessage<T>(byte[] data) where T : Message
         {
             InitWithBuffer(data);
@@ -139,6 +145,12 @@ namespace Unity.Robotics.ROSTCPConnector.MessageGeneration
 
         public void Read<T>(out T[] values, int elementSize, int length)
         {
+            if (length == 0)
+            {
+                values = new T[0];
+                return;
+            }
+
             Align(elementSize);
             T[] result = new T[length];
             Buffer.BlockCopy(data, offset, result, 0, length * elementSize);
