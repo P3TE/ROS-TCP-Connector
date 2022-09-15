@@ -141,7 +141,6 @@ namespace Unity.Robotics.ROSTCPConnector
         public override SendToState SendInternal(MessageSerializer messageSerializer, Stream stream)
         {
             SendToState sendToState = GetMessageToSend(out Message toSend);
-            Debug.Log($"toSend RosMessageName={RosMessageName} TopicName={TopicName}");
             if (sendToState == SendToState.Normal)
             {
                 SendMessageWithStream(messageSerializer, stream, toSend);
