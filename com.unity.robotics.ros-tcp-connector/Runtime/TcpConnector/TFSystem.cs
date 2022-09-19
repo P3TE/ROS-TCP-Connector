@@ -211,6 +211,20 @@ public class TFSystem
         return GetTransform(frame_id, time.ToLongTime(), tfTopic);
     }
 
+    public static TFFrame LookupRelativeTransform(string fromFrameId, string toFrameId, TimeMsg time, bool fallbackToIdentity = false, string tfTopic = "/tf")
+    {
+        TFStream stream = GetTransformStream(toFrameId, tfTopic);
+        if (stream == null)
+        {
+            if (fallbackToIdentity)
+            {
+                return TFFrame.identity;
+            }
+            throw new Exception($"Unable to find transform '{toFrameId}' in tf tree");
+        }
+        return stream.GetRelativeTF(fromFrameId, time, fallbackToIdentity);
+    }
+
     public static TFStream GetTransformStream(string frame_id, string tfTopic = "/tf")
     {
         return GetOrCreateInstance().GetOrCreateTFTopic(tfTopic).GetTransformStream(frame_id);

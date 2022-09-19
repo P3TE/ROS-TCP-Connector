@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using RosMessageTypes.BuiltinInterfaces;
 using Unity.Robotics.ROSTCPConnector.MessageGeneration;
@@ -198,6 +199,29 @@ public class TFStream
     public TFFrame GetWorldTF(TimeMsg time)
     {
         return GetWorldTF(time.ToLongTime());
+    }
+
+    public TFFrame GetRelativeTF(string from, long time = 0, bool fallbackToIdentity = false)
+    {
+        if (Parent == null)
+        {
+            if (fallbackToIdentity)
+            {
+                return TFFrame.identity;
+            }
+            throw new Exception($"Unable to find transform '{from}' in tf tree");
+        }
+
+        if (Parent.Name == from)
+        {
+            return GetLocalTF(time);
+        }
+        return Parent.GetRelativeTF(from, time).Compose(GetLocalTF(time));
+    }
+
+    public TFFrame GetRelativeTF(string from, TimeMsg time, bool fallbackToIdentity = false)
+    {
+        return GetRelativeTF(from, time.ToLongTime(), fallbackToIdentity);
     }
 
     // Can we safely stop polling for updates to a transform at this time?
