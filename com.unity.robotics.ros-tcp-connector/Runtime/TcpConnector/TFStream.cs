@@ -29,9 +29,45 @@ public struct TFFrame
         return Quaternion.Inverse(rotation) * (point - translation);
     }
 
+    /**
+     * In this case we have:
+     * this == A -> B
+     * child == B -> C
+     * And we want to calculate A -> C
+     */
     public TFFrame Compose(TFFrame child)
     {
         return new TFFrame(TransformPoint(child.translation), rotation * child.rotation);
+    }
+
+    /**
+     * In this case we have:
+     * this == A -> C
+     * parent == A -> B
+     * And we want to calculate B -> C
+     */
+    public TFFrame InverseCompose(TFFrame parent)
+    {
+        Quaternion inverseParentRotation = Quaternion.Inverse(parent.rotation);
+        Quaternion childRotation = inverseParentRotation * rotation;
+        Vector3 childTranslation = inverseParentRotation * (translation - parent.translation);
+        return new TFFrame(childTranslation, childRotation);
+    }
+
+    /**
+     * In this case we have:
+     * this == A -> C
+     * child == B -> C
+     * And we want to calculate A -> B
+     */
+    public TFFrame CalculateParent(TFFrame child)
+    {
+        Quaternion parentRotation = rotation * Quaternion.Inverse(child.rotation);
+        Vector3 parentTranslation = translation - (parentRotation * child.translation);
+        return new TFFrame(
+            parentTranslation,
+            parentRotation
+        );
     }
 
     public static TFFrame Lerp(TFFrame a, TFFrame b, float lerp)
