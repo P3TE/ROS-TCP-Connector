@@ -236,6 +236,7 @@ namespace Unity.Robotics.ROSTCPConnector
         internal void SendServiceRequest(Message requestMessage, int serviceId)
         {
             m_ConnectionInternal.SendServiceRequest(serviceId);
+            CreateMessageSender(1);
             m_MessageSender.Queue(requestMessage);
             m_ConnectionInternal.AddSenderToQueue(m_MessageSender);
             OnMessageSent(requestMessage);
