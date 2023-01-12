@@ -3,21 +3,22 @@ using Unity.Robotics.ROSTCPConnector.MessageGeneration;
 
 namespace Unity.Robotics.ROSTCPConnector.RosService
 {
-
     public abstract class RosServiceCallInfoBase
     {
-
-
         public readonly RosTopicState topicState;
 
         public readonly int serviceId;
         public readonly TaskPauser taskPauser;
 
+        public readonly Message messageToSend;
+
         public Action<Exception> serviceCallFailureAction;
 
-        protected RosServiceCallInfoBase(RosTopicState topicState, Action<Exception> serviceCallFailureAction)
+        protected RosServiceCallInfoBase(RosTopicState topicState, Message messageToSend,
+            Action<Exception> serviceCallFailureAction)
         {
             this.topicState = topicState;
+            this.messageToSend = messageToSend;
             this.serviceCallFailureAction = serviceCallFailureAction;
             this.serviceId = RosServiceCallManager.GetUniqueServiceId();
             this.taskPauser = new TaskPauser();
@@ -34,11 +35,12 @@ namespace Unity.Robotics.ROSTCPConnector.RosService
 
     public class RosServiceCallInfo<RESPONSE> : RosServiceCallInfoBase where RESPONSE : Message
     {
-
         public Action<RESPONSE> responseAction;
 
 
-        public RosServiceCallInfo(RosTopicState topicState, Action<Exception> serviceCallFailureAction, Action<RESPONSE> responseAction) : base(topicState, serviceCallFailureAction)
+        public RosServiceCallInfo(RosTopicState topicState, Message messageToSend,
+            Action<Exception> serviceCallFailureAction, Action<RESPONSE> responseAction) : base(topicState,
+            messageToSend, serviceCallFailureAction)
         {
             this.responseAction = responseAction;
             this.serviceCallFailureAction = serviceCallFailureAction;
@@ -54,6 +56,5 @@ namespace Unity.Robotics.ROSTCPConnector.RosService
 
             taskPauser.Resume(result);
         }
-
     }
 }

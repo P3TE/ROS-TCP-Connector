@@ -109,12 +109,18 @@ namespace Unity.Robotics.ROSTCPConnector
 
         void SendMessageWithStream(MessageSerializer messageSerializer, Stream stream, Message message)
         {
+            SendMessageWithStreamTo(TopicName, messageSerializer, stream, message);
+        }
+
+        public static void SendMessageWithStreamTo(string topicName, MessageSerializer messageSerializer, Stream stream,
+            Message message)
+        {
             //Clear the serializer
             messageSerializer.Clear();
             //Prepare the data to send.
             try
             {
-                messageSerializer.Write(TopicName);
+                messageSerializer.Write(topicName);
                 messageSerializer.SerializeMessageWithLength(message);
             }
             catch (Exception e)

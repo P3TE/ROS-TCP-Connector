@@ -74,6 +74,12 @@ namespace Unity.Robotics.ROSTCPConnector
         internal HudPanel m_HudPanel = null;
         public HudPanel HUDPanel => m_HudPanel;
 
+        public delegate void ConnectionThreadStateUpdatedDelegate(ConnectionThreadState connectionThreadState);
+
+        public ConnectionThreadStateUpdatedDelegate connectionThreadStateUpdatedDelegate = delegate {};
+
+        private ConnectionThreadState m_lastBroatcastConnectionState = ConnectionThreadState.NotConnected;
+
         public class OutgoingMessageQueue
         {
             ConcurrentQueue<OutgoingMessageSender> m_OutgoingMessageQueue;
@@ -355,18 +361,36 @@ namespace Unity.Robotics.ROSTCPConnector
         */
 
         public async Task<RESPONSE> SendServiceMessage<RESPONSE>(string rosServiceName, Message serviceRequest,
-            Action<RESPONSE> onServiceCompletedSuccessfully, Action<Exception> onServiceCallFailed)
+            Action<RESPONSE> onServiceCompletedSuccessfully, Action<Exception> onServiceCallFailed, bool waitForRosConnection = true)
             where RESPONSE : Message, new()
         {
+
+            if (waitForRosConnection)
+            {
+                //Wait until we are connected to a ROS TCP Endpoint before sending the service request.
+                if (ConnectionState != ConnectionThreadState.Connected)
+                {
+                    WaitForRosConnectionPauser waitForRosConnectionPauser = new WaitForRosConnectionPauser();
+                    await waitForRosConnectionPauser.PauseUntilRosConnected();
+                }
+            }
 
             // Create a request handler and add it to the dictionary of waiting service requests.
             RosTopicState topicState = GetOrCreateTopic(rosServiceName, serviceRequest.RosMessageName, isService: true);
             RosServiceCallInfo<RESPONSE> serviceCallInfo = new RosServiceCallInfo<RESPONSE>(
-                topicState, onServiceCallFailed, onServiceCompletedSuccessfully);
+                topicState, serviceRequest, onServiceCallFailed, onServiceCompletedSuccessfully);
             RosServiceCallManager.AddRosServiceCallInfoBase(serviceCallInfo);
 
-            // Send the service request.
-            topicState.SendServiceRequest(serviceRequest, serviceCallInfo.serviceId);
+            // Queue the service request.
+            OutgoingServiceCallSender outgoingServiceCallSender = new OutgoingServiceCallSender(serviceCallInfo);
+            m_OutgoingMessageQueue.Enqueue(outgoingServiceCallSender);
+
+            //Notify anything implementing a service within unity that a request has gone out... I think
+            //TODO: This might be a bit redundant, not sure if it would also be called through ROS.
+            topicState.OnMessageSent(serviceRequest);
+
+            //Wait for the response so if you want to block on the service call you can!
+            //(The callbacks are better though, why block when you can just wait for the callback)
             RESPONSE response = (RESPONSE)await serviceCallInfo.taskPauser.PauseUntilResumed();
 
             return response;
@@ -664,6 +688,13 @@ namespace Unity.Robotics.ROSTCPConnector
             if (connectionThreadData.ConnectionState == ConnectionThreadState.NotConnected)
             {
                 ClearMessageQueue(connectionThreadData.OutgoingQueue);
+            }
+
+            if(m_lastBroatcastConnectionState != connectionThreadData.ConnectionState)
+            {
+                //Update everything listening for an update to the connection state.
+                m_lastBroatcastConnectionState = connectionThreadData.ConnectionState;
+                connectionThreadStateUpdatedDelegate?.Invoke(m_lastBroatcastConnectionState);
             }
 
             Tuple<string, byte[]> data;
@@ -1185,7 +1216,7 @@ namespace Unity.Robotics.ROSTCPConnector
             SendSysCommand("__ping", new SysCommand_PingRequest { request_time = time8601 });
         }
 
-        static void PopulateSysCommand(MessageSerializer messageSerializer, string command, object param)
+        public static void PopulateSysCommand(MessageSerializer messageSerializer, string command, object param)
         {
             messageSerializer.Clear();
             // syscommands are sent as:
