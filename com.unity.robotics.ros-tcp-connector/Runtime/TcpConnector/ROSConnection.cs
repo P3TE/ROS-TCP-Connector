@@ -11,6 +11,7 @@ using System.Collections.Concurrent;
 using System.Threading;
 using System.Linq;
 using System.Runtime.Serialization;
+using Unity.Robotics.ROSTCPConnector.RosService;
 
 namespace Unity.Robotics.ROSTCPConnector
 {
@@ -312,6 +313,7 @@ namespace Unity.Robotics.ROSTCPConnector
             }
         }
 
+        /*
         // Send a request to a ros service
         public async void SendServiceMessage<RESPONSE>(string rosServiceName, Message serviceRequest, Action<RESPONSE> callback) where RESPONSE : Message, new()
         {
@@ -349,6 +351,25 @@ namespace Unity.Robotics.ROSTCPConnector
             topicState.OnMessageReceived(rawResponse);
             RESPONSE result = m_MessageDeserializer.DeserializeMessage<RESPONSE>(rawResponse);
             return result;
+        }
+        */
+
+        public async Task<RESPONSE> SendServiceMessage<RESPONSE>(string rosServiceName, Message serviceRequest,
+            Action<RESPONSE> onServiceCompletedSuccessfully, Action<Exception> onServiceCallFailed)
+            where RESPONSE : Message, new()
+        {
+
+            // Create a request handler and add it to the dictionary of waiting service requests.
+            RosTopicState topicState = GetOrCreateTopic(rosServiceName, serviceRequest.RosMessageName, isService: true);
+            RosServiceCallInfo<RESPONSE> serviceCallInfo = new RosServiceCallInfo<RESPONSE>(
+                topicState, onServiceCallFailed, onServiceCompletedSuccessfully);
+            RosServiceCallManager.AddRosServiceCallInfoBase(serviceCallInfo);
+
+            // Send the service request.
+            topicState.SendServiceRequest(serviceRequest, serviceCallInfo.serviceId);
+            RESPONSE response = (RESPONSE)await serviceCallInfo.taskPauser.PauseUntilResumed();
+
+            return response;
         }
 
         public void GetTopicList(Action<string[]> callback)
@@ -653,7 +674,9 @@ namespace Unity.Robotics.ROSTCPConnector
 
                 if (m_SpecialIncomingMessageHandler != null)
                 {
-                    m_SpecialIncomingMessageHandler(topic, contents);
+                    Action<string, byte[]> tempHandler = m_SpecialIncomingMessageHandler;
+                    m_SpecialIncomingMessageHandler = null;
+                    tempHandler(topic, contents);
                 }
                 else if (topic.StartsWith("__"))
                 {
@@ -753,6 +776,20 @@ namespace Unity.Robotics.ROSTCPConnector
                         Debug.LogError(logCommand.text);
                     }
                     break;
+                case SysCommand.k_SysCommand_UnityServiceFailed:
+                    {
+                        SysCommand_ServiceError serviceFailed = JsonUtility.FromJson<SysCommand_ServiceError>(json);
+                        RosServiceCallManager.OnServiceFailed(serviceFailed.srv_id,
+                            new RosServiceFailedException(serviceFailed.error_message));
+                    }
+                    break;
+                case SysCommand.k_SysCommand_UnityServiceError:
+                    {
+                        SysCommand_ServiceError serviceError = JsonUtility.FromJson<SysCommand_ServiceError>(json);
+                        RosServiceCallManager.OnServiceFailed(serviceError.srv_id,
+                            new RosServiceErrorException(serviceError.error_message));
+                    }
+                    break;
                 case SysCommand.k_SysCommand_ServiceRequest:
                     {
                         var serviceCommand = JsonUtility.FromJson<SysCommand_Service>(json);
@@ -760,8 +797,6 @@ namespace Unity.Robotics.ROSTCPConnector
                         // the next incoming message will be a request for a Unity service, so set a special callback to process it
                         m_SpecialIncomingMessageHandler = (string serviceTopic, byte[] requestBytes) =>
                         {
-                            m_SpecialIncomingMessageHandler = null;
-
                             RosTopicState topicState = GetTopic(serviceTopic);
                             if (topicState == null)
                             {
@@ -780,20 +815,15 @@ namespace Unity.Robotics.ROSTCPConnector
                         var serviceCommand = JsonUtility.FromJson<SysCommand_Service>(json);
                         m_SpecialIncomingMessageHandler = (string serviceTopic, byte[] requestBytes) =>
                         {
-                            m_SpecialIncomingMessageHandler = null;
-
-                            TaskPauser resumer;
-                            lock (m_ServiceRequestLock)
+                            if (RosServiceCallManager.TryRemoveWaitingService(serviceCommand.srv_id,
+                                    out RosServiceCallInfoBase rosServiceCallInfoBase))
                             {
-                                if (!m_ServicesWaiting.TryGetValue(serviceCommand.srv_id, out resumer))
-                                {
-                                    Debug.LogError($"Unable to route service response on \"{serviceTopic}\"! SrvID {serviceCommand.srv_id} does not exist.");
-                                    return;
-                                }
-
-                                m_ServicesWaiting.Remove(serviceCommand.srv_id);
+                                rosServiceCallInfoBase.OnServiceCompletedSuccessfully(requestBytes);
                             }
-                            resumer.Resume(requestBytes);
+                            else
+                            {
+                                Debug.LogError($"Unable to route service response on \"{serviceTopic}\"! SrvID {serviceCommand.srv_id} does not exist.");
+                            }
                         };
                     }
                     break;

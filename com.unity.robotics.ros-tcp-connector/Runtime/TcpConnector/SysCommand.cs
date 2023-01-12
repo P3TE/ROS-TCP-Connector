@@ -17,6 +17,8 @@ namespace Unity.Robotics.ROSTCPConnector
         public const string k_SysCommand_Publish = "__publish";
         public const string k_SysCommand_RosService = "__ros_service";
         public const string k_SysCommand_UnityService = "__unity_service";
+        public const string k_SysCommand_UnityServiceFailed = "__unity_service_failed";
+        public const string k_SysCommand_UnityServiceError = "__unity_service_error";
         public const string k_SysCommand_TopicList = "__topic_list";
         public const string k_SysCommand_RemoveSubscriber = "__remove_subscriber";
         public const string k_SysCommand_RemovePublisher = "__remove_publisher";
@@ -94,6 +96,12 @@ namespace Unity.Robotics.ROSTCPConnector
     public struct SysCommand_Service
     {
         public int srv_id;
+    }
+
+    public struct SysCommand_ServiceError
+    {
+        public int srv_id;
+        public string error_message;
     }
 
     public struct SysCommand_TopicsRequest
