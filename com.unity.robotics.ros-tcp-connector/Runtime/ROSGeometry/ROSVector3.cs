@@ -24,9 +24,11 @@ namespace Unity.Robotics.ROSTCPConnector.ROSGeometry
             internalVector = new Vector3(x, y, z);
         }
 
-        public Vector3(Vector3 vec_ruf)
+        public Vector3(Vector3 vec_ruf, bool angularVelocity = false)
         {
-            internalVector = s_CoordinateSpace.ConvertFromRUF(vec_ruf);
+            internalVector = angularVelocity
+                ? s_CoordinateSpace.ConvertAngularVelocityFromRUF(vec_ruf)
+                : s_CoordinateSpace.ConvertFromRUF(vec_ruf);
         }
 
         public Vector3 toUnity => s_CoordinateSpace.ConvertToRUF(internalVector);

@@ -312,10 +312,10 @@ namespace Unity.Robotics.ROSTCPConnector.ROSGeometry
 
     public static class CoordinateSpaceExtensions
     {
-        public static Vector3<C> To<C>(this Vector3 self)
+        public static Vector3<C> To<C>(this Vector3 self, bool angularVelocity = false)
             where C : ICoordinateSpace, new()
         {
-            return new Vector3<C>(self);
+            return new Vector3<C>(self, angularVelocity);
         }
 
         public static Quaternion<C> To<C>(this Quaternion self)
@@ -344,6 +344,11 @@ namespace Unity.Robotics.ROSTCPConnector.ROSGeometry
             return new Vector3<C>(self.x, self.y, self.z).toUnity;
         }
 
+        public static Vector3 FromAngularVelocity<C>(this Point32Msg self) where C : ICoordinateSpace, new()
+        {
+            return new Vector3<C>(self.x, self.y, self.z).toUnityAngularVelocity;
+        }
+
         public static Vector3<C> As<C>(this Vector3Msg self) where C : ICoordinateSpace, new()
         {
             return new Vector3<C>((float)self.x, (float)self.y, (float)self.z);
@@ -352,6 +357,11 @@ namespace Unity.Robotics.ROSTCPConnector.ROSGeometry
         public static Vector3 From<C>(this Vector3Msg self) where C : ICoordinateSpace, new()
         {
             return new Vector3<C>((float)self.x, (float)self.y, (float)self.z).toUnity;
+        }
+
+        public static Vector3 FromAngularVelocity<C>(this Vector3Msg self) where C : ICoordinateSpace, new()
+        {
+            return new Vector3<C>((float)self.x, (float)self.y, (float)self.z).toUnityAngularVelocity;
         }
 
         public static Quaternion<C> As<C>(this QuaternionMsg self) where C : ICoordinateSpace, new()
