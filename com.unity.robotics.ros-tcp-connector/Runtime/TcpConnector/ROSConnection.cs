@@ -226,24 +226,25 @@ namespace Unity.Robotics.ROSTCPConnector
         public void Subscribe<T>(string topic, Action<T> callback) where T : Message
         {
             string rosMessageName = MessageRegistry.GetRosMessageName<T>();
-            AddSubscriberInternal(topic, rosMessageName, (Message msg) =>
-            {
-                if (msg.RosMessageName == rosMessageName)
-                {
-                    callback((T)msg);
-                }
-                else
-                {
-                    Debug.LogError($"Subscriber to '{topic}' expected '{rosMessageName}' but received '{msg.RosMessageName}'!?");
-                }
-            });
+            RosSubscriptionCallback<T> rosSubscriptionCallback =
+                new RosSubscriptionCallback<T>(topic, rosMessageName, callback);
+            AddSubscriberInternal(rosSubscriptionCallback);
         }
 
-        public void Unsubscribe(string topic)
+        public void UnsubscribeAllForTopic(string topic)
         {
             RosTopicState info = GetTopic(topic);
             if (info != null)
                 info.UnsubscribeAll();
+        }
+
+        public void Unsubscribe<T>(string topic, Action<T> callback) where T : Message
+        {
+            RosTopicState info = GetTopic(topic);
+            if (info != null)
+            {
+                info.Unsubscribe(callback);
+            }
         }
 
         // Version for when the message type is unknown at compile time
@@ -256,18 +257,20 @@ namespace Unity.Robotics.ROSTCPConnector
                 return;
             }
 
-            AddSubscriberInternal(topic, rosMessageName, callback);
+            RosSubscriptionCallbackBase rosSubscriptionCallback =
+                new RosSubscriptionCallbackBase(topic, rosMessageName, (Action<Message>) callback);
+            AddSubscriberInternal(rosSubscriptionCallback);
         }
 
-        void AddSubscriberInternal(string topic, string rosMessageName, Action<Message> callback)
+        void AddSubscriberInternal(RosSubscriptionCallbackBase rosSubscriptionCallbackBase)
         {
             RosTopicState info;
-            if (!m_Topics.TryGetValue(topic, out info))
+            if (!m_Topics.TryGetValue(rosSubscriptionCallbackBase.topic, out info))
             {
-                info = AddTopic(topic, rosMessageName);
+                info = AddTopic(rosSubscriptionCallbackBase.topic, rosSubscriptionCallbackBase.rosMessageName);
             }
 
-            info.AddSubscriber(callback);
+            info.AddSubscriber(rosSubscriptionCallbackBase);
 
             foreach (Action<RosTopicState> topicCallback in m_NewTopicCallbacks)
             {

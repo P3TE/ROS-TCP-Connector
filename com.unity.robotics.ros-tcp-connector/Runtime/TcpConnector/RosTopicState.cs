@@ -41,7 +41,7 @@ namespace Unity.Robotics.ROSTCPConnector
         public bool IsUnityService => m_ServiceImplementation != null || m_ServiceImplementationAsync != null;
         public bool IsService => m_ServiceResponseTopic != null || m_Subtopic == MessageSubtopic.Response;
 
-        List<Action<Message>> m_SubscriberCallbacks = new List<Action<Message>>();
+        List<RosSubscriptionCallbackBase> m_SubscriberCallbacks = new ();
         public bool HasSubscriberCallback => m_SubscriberCallbacks.Count > 0;
         public bool SentSubscriberRegistration { get; private set; }
 
@@ -91,7 +91,7 @@ namespace Unity.Robotics.ROSTCPConnector
 
             Message message = Deserialize(data);
 
-            m_SubscriberCallbacks.ForEach(item => item(message));
+            m_SubscriberCallbacks.ForEach(item => item.OnMessageReceived(message));
         }
 
         public void OnMessageSent(Message message)
@@ -102,7 +102,7 @@ namespace Unity.Robotics.ROSTCPConnector
                 ChangeRosMessageName(message.RosMessageName);
             }
 
-            m_SubscriberCallbacks.ForEach(item => item(message));
+            m_SubscriberCallbacks.ForEach(item => item.OnMessageReceived(message));
         }
 
         internal async void HandleUnityServiceRequest(byte[] data, int serviceId)
@@ -147,10 +147,9 @@ namespace Unity.Robotics.ROSTCPConnector
             return m_Deserializer(m_ConnectionInternal.Deserializer);
         }
 
-        public void AddSubscriber(Action<Message> callback)
+        public void AddSubscriber(RosSubscriptionCallbackBase subscriber)
         {
-            m_SubscriberCallbacks.Add(callback);
-
+            m_SubscriberCallbacks.Add(subscriber);
             RegisterSubscriber();
         }
 
@@ -168,6 +167,31 @@ namespace Unity.Robotics.ROSTCPConnector
             m_SubscriberCallbacks.Clear();
             m_ConnectionInternal.SendSubscriberUnregistration(m_Topic);
             SentSubscriberRegistration = false;
+        }
+
+        public void Unsubscribe(Delegate callbackToUnsubscribe)
+        {
+            int foundIndex = -1;
+            for (int i = 0; i < m_SubscriberCallbacks.Count; i++)
+            {
+                if (m_SubscriberCallbacks[i].CallbackMatches(callbackToUnsubscribe))
+                {
+                    foundIndex = i;
+                }
+            }
+
+            if (foundIndex == -1)
+            {
+                Debug.LogWarning($"Tried to unsubscribe from {Topic} but no matching callback was found!");
+                return;
+            }
+
+            m_SubscriberCallbacks.RemoveAt(foundIndex);
+            if (m_SubscriberCallbacks.Count == 0)
+            {
+                // No more subscribers, send the unregistration and mark that no registration has occurred.
+                UnsubscribeAll();
+            }
         }
 
         public void ImplementService<TRequest, TResponse>(Func<TRequest, TResponse> implementation, int queueSize)
