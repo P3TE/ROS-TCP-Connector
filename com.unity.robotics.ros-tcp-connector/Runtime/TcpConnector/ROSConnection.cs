@@ -186,6 +186,26 @@ namespace Unity.Robotics.ROSTCPConnector
 
         RosTopicState AddTopic(string topic, string rosMessageName, bool isService = false)
         {
+
+            //Add warnings for topic that may have errors.
+            if (string.IsNullOrWhiteSpace(topic))
+            {
+                Debug.LogError("Topic was null or empty!");
+            } else if (topic[0] == '/')
+            {
+                if (topic.Length < 1)
+                {
+                    Debug.LogError("'/' isn't a valid topic!");
+                } else if (topic[1] == '/')
+                {
+                    Debug.LogError($"Topic should only have one '/' at the start! Topic = {topic}");
+                }
+                else
+                {
+                    //Probably correct.
+                }
+            }
+
             RosTopicState newTopic = new RosTopicState(topic, rosMessageName, this, new InternalAPI(this), isService);
             lock (m_Topics)
             {
