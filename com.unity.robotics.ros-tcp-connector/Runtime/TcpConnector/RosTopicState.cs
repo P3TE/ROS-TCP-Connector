@@ -1,5 +1,4 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Net.Sockets;
 using System.Threading.Tasks;
@@ -8,6 +7,20 @@ using UnityEngine;
 
 namespace Unity.Robotics.ROSTCPConnector
 {
+    public class EndpointMessageContents
+    {
+        public string topicName;
+        public byte[] messageData;
+        public bool wasLatched = false;
+
+        public EndpointMessageContents(string topicName, byte[] messageData, bool wasLatched)
+        {
+            this.topicName = topicName;
+            this.messageData = messageData;
+            this.wasLatched = wasLatched;
+        }
+    }
+
     public class RosTopicState
     {
         string m_Topic;
@@ -50,6 +63,8 @@ namespace Unity.Robotics.ROSTCPConnector
         public float LastMessageReceivedRealtime => m_LastMessageReceivedRealtime;
         public float LastMessageSentRealtime => m_LastMessageSentRealtime;
 
+        public EndpointMessageContents latchedMessage;
+
         internal RosTopicState(string topic, string rosMessageName, ROSConnection connection, ROSConnection.InternalAPI connectionInternal, bool isService, MessageSubtopic subtopic = MessageSubtopic.Default)
         {
             m_Topic = topic;
@@ -72,7 +87,7 @@ namespace Unity.Robotics.ROSTCPConnector
             m_Deserializer = null;
         }
 
-        internal void OnMessageReceived(byte[] data)
+        internal void OnMessageReceived(EndpointMessageContents data)
         {
             m_LastMessageReceivedRealtime = Time.realtimeSinceStartup;
             if (m_IsRosService && m_ServiceResponseTopic != null)
@@ -89,9 +104,21 @@ namespace Unity.Robotics.ROSTCPConnector
                 return;
             }
 
-            Message message = Deserialize(data);
+            Message message = Deserialize(data.messageData);
 
-            m_SubscriberCallbacks.ForEach(item => item.OnMessageReceived(message));
+            foreach (RosSubscriptionCallbackBase callback in m_SubscriberCallbacks)
+            {
+                try
+                {
+                    callback.OnMessageReceived(message);
+                }
+                catch (Exception e)
+                {
+                    Debug.LogError(e.Message);
+                }
+            }
+
+            if (data.wasLatched) latchedMessage = data;
         }
 
         public void OnMessageSent(Message message)
@@ -105,7 +132,7 @@ namespace Unity.Robotics.ROSTCPConnector
             m_SubscriberCallbacks.ForEach(item => item.OnMessageReceived(message));
         }
 
-        internal async void HandleUnityServiceRequest(byte[] data, int serviceId)
+        internal async void HandleUnityServiceRequest(EndpointMessageContents data, int serviceId)
         {
             if (!IsUnityService)
             {
@@ -116,7 +143,7 @@ namespace Unity.Robotics.ROSTCPConnector
             OnMessageReceived(data);
 
             // deserialize the request message
-            Message requestMessage = Deserialize(data);
+            Message requestMessage = Deserialize(data.messageData);
 
             // run the actual service
             Message response;
@@ -151,6 +178,8 @@ namespace Unity.Robotics.ROSTCPConnector
         {
             m_SubscriberCallbacks.Add(subscriber);
             RegisterSubscriber();
+
+            if (latchedMessage != null) subscriber.OnMessageReceived(Deserialize(latchedMessage.messageData));
         }
 
         void RegisterSubscriber(NetworkStream stream = null)

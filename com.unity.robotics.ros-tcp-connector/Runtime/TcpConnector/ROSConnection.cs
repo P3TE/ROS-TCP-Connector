@@ -103,9 +103,9 @@ namespace Unity.Robotics.ROSTCPConnector
             }
         }
 
-        OutgoingMessageQueue m_OutgoingMessageQueue = new OutgoingMessageQueue();
+        readonly OutgoingMessageQueue m_OutgoingMessageQueue = new();
 
-        ConcurrentQueue<Tuple<string, byte[]>> m_IncomingMessages = new ConcurrentQueue<Tuple<string, byte[]>>();
+        readonly ConcurrentQueue<EndpointMessageContents> m_IncomingMessages = new();
 
         private ConnectionThreadData connectionThreadData = null;
 
@@ -695,7 +695,7 @@ namespace Unity.Robotics.ROSTCPConnector
                 _instance = this;
         }
 
-        Action<string, byte[]> m_SpecialIncomingMessageHandler;
+        Action<EndpointMessageContents> m_SpecialIncomingMessageHandler;
 
         void Update()
         {
@@ -720,25 +720,24 @@ namespace Unity.Robotics.ROSTCPConnector
                 connectionThreadStateUpdatedDelegate?.Invoke(m_lastBroatcastConnectionState);
             }
 
-            Tuple<string, byte[]> data;
+            EndpointMessageContents data;
             while (m_IncomingMessages.TryDequeue(out data))
             {
-                (string topic, byte[] contents) = data;
                 m_LastMessageReceivedRealtime = Time.realtimeSinceStartup;
 
                 if (m_SpecialIncomingMessageHandler != null)
                 {
-                    Action<string, byte[]> tempHandler = m_SpecialIncomingMessageHandler;
+                    Action<EndpointMessageContents> tempHandler = m_SpecialIncomingMessageHandler;
                     m_SpecialIncomingMessageHandler = null;
-                    tempHandler(topic, contents);
+                    tempHandler(data);
                 }
-                else if (topic.StartsWith("__"))
+                else if (data.topicName.StartsWith("__"))
                 {
-                    ReceiveSysCommand(topic, Encoding.UTF8.GetString(contents));
+                    ReceiveSysCommand(data.topicName, Encoding.UTF8.GetString(data.messageData));
                 }
                 else
                 {
-                    RosTopicState topicInfo = GetTopic(topic);
+                    RosTopicState topicInfo = GetTopic(data.topicName);
                     // if this is null, we have received a message on a topic we've never heard of...!?
                     // all we can do is ignore it, we don't even know what type it is
                     if (topicInfo != null)
@@ -747,7 +746,7 @@ namespace Unity.Robotics.ROSTCPConnector
                         {
                             //Add a try catch so that bad logic from one received message doesn't
                             //cause the Update method to exit without processing other received messages.
-                            topicInfo.OnMessageReceived(contents);
+                            topicInfo.OnMessageReceived(data);
                         }
                         catch (Exception e)
                         {
@@ -849,16 +848,16 @@ namespace Unity.Robotics.ROSTCPConnector
                         var serviceCommand = JsonUtility.FromJson<SysCommand_Service>(json);
 
                         // the next incoming message will be a request for a Unity service, so set a special callback to process it
-                        m_SpecialIncomingMessageHandler = (string serviceTopic, byte[] requestBytes) =>
+                        m_SpecialIncomingMessageHandler = (EndpointMessageContents contents) =>
                         {
-                            RosTopicState topicState = GetTopic(serviceTopic);
+                            RosTopicState topicState = GetTopic(contents.topicName);
                             if (topicState == null)
                             {
-                                Debug.LogError($"Unity service {serviceTopic} has not been implemented!");
+                                Debug.LogError($"Unity service {contents.topicName} has not been implemented!");
                                 return;
                             }
 
-                            topicState.HandleUnityServiceRequest(requestBytes, serviceCommand.srv_id);
+                            topicState.HandleUnityServiceRequest(contents, serviceCommand.srv_id);
                         };
                     }
                     break;
@@ -867,16 +866,16 @@ namespace Unity.Robotics.ROSTCPConnector
                     {
                         // the next incoming message will be a response from a ros service
                         var serviceCommand = JsonUtility.FromJson<SysCommand_Service>(json);
-                        m_SpecialIncomingMessageHandler = (string serviceTopic, byte[] requestBytes) =>
+                        m_SpecialIncomingMessageHandler = (EndpointMessageContents contents) =>
                         {
                             if (RosServiceCallManager.TryRemoveWaitingService(serviceCommand.srv_id,
                                     out RosServiceCallInfoBase rosServiceCallInfoBase))
                             {
-                                rosServiceCallInfoBase.OnServiceCompletedSuccessfully(requestBytes);
+                                rosServiceCallInfoBase.OnServiceCompletedSuccessfully(contents);
                             }
                             else
                             {
-                                Debug.LogError($"Unable to route service response on \"{serviceTopic}\"! SrvID {serviceCommand.srv_id} does not exist.");
+                                Debug.LogError($"Unable to route service response on \"{contents.topicName}\"! SrvID {serviceCommand.srv_id} does not exist.");
                             }
                         };
                     }
@@ -947,7 +946,7 @@ namespace Unity.Robotics.ROSTCPConnector
             public Action<NetworkStream> OnConnectionStartedCallback { get; }
             public Action<bool> DeregisterAll { get; }
             public OutgoingMessageQueue OutgoingQueue { get; }
-            public ConcurrentQueue<Tuple<string, byte[]>> IncomingQueue { get; }
+            public ConcurrentQueue<EndpointMessageContents> IncomingQueue { get; }
 
             public CancellationTokenSource ConnectionThreadCancellation { get; }
 
@@ -973,7 +972,7 @@ namespace Unity.Robotics.ROSTCPConnector
 
             public bool HasError => Error != null;
 
-            public ConnectionThreadData(string rosIPAddress, int rosPort, float networkTimeoutSeconds, float keepaliveTime, int sleepMilliseconds, Action<NetworkStream> onConnectionStartedCallback, Action<bool> deregisterAll, OutgoingMessageQueue outgoingQueue, ConcurrentQueue<Tuple<string, byte[]>> incomingQueue, CancellationTokenSource cancellationTokenSource, bool showConnectionFailedWarning)
+            public ConnectionThreadData(string rosIPAddress, int rosPort, float networkTimeoutSeconds, float keepaliveTime, int sleepMilliseconds, Action<NetworkStream> onConnectionStartedCallback, Action<bool> deregisterAll, OutgoingMessageQueue outgoingQueue, ConcurrentQueue<EndpointMessageContents> incomingQueue, CancellationTokenSource cancellationTokenSource, bool showConnectionFailedWarning)
             {
                 RosIPAddress = rosIPAddress;
                 RosPort = rosPort;
@@ -1141,8 +1140,8 @@ namespace Unity.Robotics.ROSTCPConnector
         static async Task ReaderThread(ConnectionThreadData connectionInfo, CancellationToken readerCancellationToken)
         {
             // First message should be the handshake
-            Tuple<string, byte[]> handshakeContent = await ReadMessageContents(connectionInfo.NetworkStream, connectionInfo.SleepMilliseconds, readerCancellationToken);
-            if (handshakeContent.Item1 == SysCommand.k_SysCommand_Handshake)
+            EndpointMessageContents handshakeContent = await ReadMessageContents(connectionInfo.NetworkStream, connectionInfo.SleepMilliseconds, readerCancellationToken);
+            if (handshakeContent.topicName == SysCommand.k_SysCommand_Handshake)
             {
                 connectionInfo.Error = null;
                 connectionInfo.IncomingQueue.Enqueue(handshakeContent);
@@ -1156,12 +1155,12 @@ namespace Unity.Robotics.ROSTCPConnector
             {
                 try
                 {
-                    Tuple<string, byte[]> content = await ReadMessageContents(connectionInfo.NetworkStream, connectionInfo.SleepMilliseconds, readerCancellationToken);
+                    EndpointMessageContents content = await ReadMessageContents(connectionInfo.NetworkStream, connectionInfo.SleepMilliseconds, readerCancellationToken);
                     // Debug.Log($"Message {content.Item1} received");
                     connectionInfo.ConnectionState = ConnectionThreadState.Connected;
                     connectionInfo.Error = null;
 
-                    if (content.Item1 != "") // ignore keepalive messages
+                    if (content.topicName != "") // ignore keepalive messages
                         connectionInfo.IncomingQueue.Enqueue(content);
                 }
                 catch (OperationCanceledException)
@@ -1194,8 +1193,9 @@ namespace Unity.Robotics.ROSTCPConnector
 
         static byte[] s_FourBytes = new byte[4];
         static byte[] s_TopicScratchSpace = new byte[64];
+        static byte[] s_WasLatched = new byte[1];
 
-        static async Task<Tuple<string, byte[]>> ReadMessageContents(NetworkStream networkStream, int sleepMilliseconds, CancellationToken token)
+        static async Task<EndpointMessageContents> ReadMessageContents(NetworkStream networkStream, int sleepMilliseconds, CancellationToken token)
         {
             // Get first bytes to determine length of topic name
             await ReadToByteArray(networkStream, s_FourBytes, 4, sleepMilliseconds, token);
@@ -1215,7 +1215,10 @@ namespace Unity.Robotics.ROSTCPConnector
             byte[] readBuffer = new byte[full_message_size];
             await ReadToByteArray(networkStream, readBuffer, full_message_size, sleepMilliseconds, token);
 
-            return Tuple.Create(topicName, readBuffer);
+            await ReadToByteArray(networkStream, s_WasLatched, 1, sleepMilliseconds, token);
+            bool wasLatched = BitConverter.ToBoolean(s_WasLatched);
+
+            return new EndpointMessageContents(topicName, readBuffer, wasLatched);
         }
 
         void OnApplicationQuit()

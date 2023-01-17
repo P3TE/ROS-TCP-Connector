@@ -24,7 +24,7 @@ namespace Unity.Robotics.ROSTCPConnector.RosService
             this.taskPauser = new TaskPauser();
         }
 
-        public abstract void OnServiceCompletedSuccessfully(byte[] rawResponse);
+        public abstract void OnServiceCompletedSuccessfully(EndpointMessageContents contents);
 
         public void OnServiceCallFailed(Exception cause)
         {
@@ -46,12 +46,12 @@ namespace Unity.Robotics.ROSTCPConnector.RosService
             this.serviceCallFailureAction = serviceCallFailureAction;
         }
 
-        public override void OnServiceCompletedSuccessfully(byte[] rawResponse)
+        public override void OnServiceCompletedSuccessfully(EndpointMessageContents contents)
         {
-            topicState.OnMessageReceived(rawResponse);
+            topicState.OnMessageReceived(contents);
 
             MessageDeserializer messageDeserializer = new MessageDeserializer();
-            RESPONSE result = messageDeserializer.DeserializeMessage<RESPONSE>(rawResponse);
+            RESPONSE result = messageDeserializer.DeserializeMessage<RESPONSE>(contents.messageData);
             responseAction.Invoke(result);
 
             taskPauser.Resume(result);
