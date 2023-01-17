@@ -65,6 +65,10 @@ namespace Unity.Robotics.ROSTCPConnector
 
         public EndpointMessageContents latchedMessage;
 
+        private bool subscriberCallbacksInIteration = false;
+
+        private LinkedList<Action> postSubscriberCallbackIterationActions = new LinkedList<Action>();
+
         internal RosTopicState(string topic, string rosMessageName, ROSConnection connection, ROSConnection.InternalAPI connectionInternal, bool isService, MessageSubtopic subtopic = MessageSubtopic.Default)
         {
             m_Topic = topic;
@@ -132,6 +136,7 @@ namespace Unity.Robotics.ROSTCPConnector
 
         private void CallbackAllSubscriptions(Message message)
         {
+            subscriberCallbacksInIteration = true;
             foreach (RosSubscriptionCallbackBase callback in m_SubscriberCallbacks)
             {
                 try
@@ -142,6 +147,14 @@ namespace Unity.Robotics.ROSTCPConnector
                 {
                     Debug.LogError(e.Message);
                 }
+            }
+
+            // To handle the concurrent modification exception of removing subscriptions during the iteration.
+            subscriberCallbacksInIteration = false;
+            while (postSubscriberCallbackIterationActions.Count > 0)
+            {
+                postSubscriberCallbackIterationActions.First.Value?.Invoke();
+                postSubscriberCallbackIterationActions.RemoveFirst();
             }
         }
 
@@ -189,19 +202,20 @@ namespace Unity.Robotics.ROSTCPConnector
 
         public void AddSubscriber(RosSubscriptionCallbackBase subscriber)
         {
-            m_SubscriberCallbacks.Add(subscriber);
-            RegisterSubscriber();
 
-            if (latchedMessage != null) subscriber.OnMessageReceived(Deserialize(latchedMessage.messageData));
-        }
-
-        void RegisterSubscriber(NetworkStream stream = null)
-        {
-            if (m_Connection.HasConnectionThread && !SentSubscriberRegistration && !IsService)
+            PerformSubscriberAction(() =>
             {
-                m_ConnectionInternal.SendSubscriberRegistration(m_Topic, m_RosMessageName, stream);
-                SentSubscriberRegistration = true;
-            }
+                m_SubscriberCallbacks.Add(subscriber);
+
+                if (m_Connection.HasConnectionThread && !SentSubscriberRegistration && !IsService)
+                {
+                    m_ConnectionInternal.SendSubscriberRegistration(m_Topic, m_RosMessageName);
+                    SentSubscriberRegistration = true;
+                }
+
+                if (latchedMessage != null) subscriber.OnMessageReceived(Deserialize(latchedMessage.messageData));
+            });
+
         }
 
         public void UnsubscribeAll()
@@ -213,26 +227,43 @@ namespace Unity.Robotics.ROSTCPConnector
 
         public void Unsubscribe(Delegate callbackToUnsubscribe)
         {
-            int foundIndex = -1;
-            for (int i = 0; i < m_SubscriberCallbacks.Count; i++)
+
+            PerformSubscriberAction(() =>
             {
-                if (m_SubscriberCallbacks[i].CallbackMatches(callbackToUnsubscribe))
+                int foundIndex = -1;
+                for (int i = 0; i < m_SubscriberCallbacks.Count; i++)
                 {
-                    foundIndex = i;
+                    if (m_SubscriberCallbacks[i].CallbackMatches(callbackToUnsubscribe))
+                    {
+                        foundIndex = i;
+                    }
                 }
-            }
 
-            if (foundIndex == -1)
-            {
-                Debug.LogWarning($"Tried to unsubscribe from {Topic} but no matching callback was found!");
-                return;
-            }
+                if (foundIndex == -1)
+                {
+                    Debug.LogWarning($"Tried to unsubscribe from {Topic} but no matching callback was found!");
+                    return;
+                }
 
-            m_SubscriberCallbacks.RemoveAt(foundIndex);
-            if (m_SubscriberCallbacks.Count == 0)
+                m_SubscriberCallbacks.RemoveAt(foundIndex);
+                if (m_SubscriberCallbacks.Count == 0)
+                {
+                    // No more subscribers, send the unregistration and mark that no registration has occurred.
+                    UnsubscribeAll();
+                }
+            });
+
+        }
+
+        private void PerformSubscriberAction(Action action)
+        {
+            if (subscriberCallbacksInIteration)
             {
-                // No more subscribers, send the unregistration and mark that no registration has occurred.
-                UnsubscribeAll();
+                postSubscriberCallbackIterationActions.AddLast(action);
+            }
+            else
+            {
+                action?.Invoke();
             }
         }
 
