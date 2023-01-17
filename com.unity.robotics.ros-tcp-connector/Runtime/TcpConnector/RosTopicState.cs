@@ -106,17 +106,7 @@ namespace Unity.Robotics.ROSTCPConnector
 
             Message message = Deserialize(data.messageData);
 
-            foreach (RosSubscriptionCallbackBase callback in m_SubscriberCallbacks)
-            {
-                try
-                {
-                    callback.OnMessageReceived(message);
-                }
-                catch (Exception e)
-                {
-                    Debug.LogError(e.Message);
-                }
-            }
+            CallbackAllSubscriptions(message);
 
             if (data.wasLatched) latchedMessage = data;
         }
@@ -129,7 +119,30 @@ namespace Unity.Robotics.ROSTCPConnector
                 ChangeRosMessageName(message.RosMessageName);
             }
 
-            m_SubscriberCallbacks.ForEach(item => item.OnMessageReceived(message));
+            CallbackAllSubscriptions(message);
+
+            if (IsPublisherLatched)
+            {
+                MessageSerializer messageSerializer = new MessageSerializer();
+                messageSerializer.Clear();
+                messageSerializer.Write(message);
+                latchedMessage = new EndpointMessageContents(Topic, messageSerializer.GetBytes(), true);
+            }
+        }
+
+        private void CallbackAllSubscriptions(Message message)
+        {
+            foreach (RosSubscriptionCallbackBase callback in m_SubscriberCallbacks)
+            {
+                try
+                {
+                    callback.OnMessageReceived(message);
+                }
+                catch (Exception e)
+                {
+                    Debug.LogError(e.Message);
+                }
+            }
         }
 
         internal async void HandleUnityServiceRequest(EndpointMessageContents data, int serviceId)
