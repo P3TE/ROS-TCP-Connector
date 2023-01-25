@@ -12,6 +12,7 @@ using System.Threading;
 using System.Linq;
 using System.Runtime.Serialization;
 using Unity.Robotics.ROSTCPConnector.RosService;
+using Unity.Robotics.ROSTCPConnector.RosTime;
 
 namespace Unity.Robotics.ROSTCPConnector
 {
@@ -725,35 +726,35 @@ namespace Unity.Robotics.ROSTCPConnector
             {
                 m_LastMessageReceivedRealtime = Time.realtimeSinceStartup;
 
-                if (m_SpecialIncomingMessageHandler != null)
+                try
                 {
-                    Action<EndpointMessageContents> tempHandler = m_SpecialIncomingMessageHandler;
-                    m_SpecialIncomingMessageHandler = null;
-                    tempHandler(data);
-                }
-                else if (data.topicName.StartsWith("__"))
-                {
-                    ReceiveSysCommand(data.topicName, Encoding.UTF8.GetString(data.messageData));
-                }
-                else
-                {
-                    RosTopicState topicInfo = GetTopic(data.topicName);
-                    // if this is null, we have received a message on a topic we've never heard of...!?
-                    // all we can do is ignore it, we don't even know what type it is
-                    if (topicInfo != null)
+                    //Add a try catch so that bad logic from one received message doesn't
+                    //cause the Update method to exit without processing other received messages.
+
+                    if (m_SpecialIncomingMessageHandler != null)
                     {
-                        try
+                        Action<EndpointMessageContents> tempHandler = m_SpecialIncomingMessageHandler;
+                        m_SpecialIncomingMessageHandler = null;
+                        tempHandler(data);
+                    }
+                    else if (data.topicName.StartsWith("__"))
+                    {
+                        ReceiveSysCommand(data.topicName, Encoding.UTF8.GetString(data.messageData));
+                    }
+                    else
+                    {
+                        RosTopicState topicInfo = GetTopic(data.topicName);
+                        // if this is null, we have received a message on a topic we've never heard of...!?
+                        // all we can do is ignore it, we don't even know what type it is
+                        if (topicInfo != null)
                         {
-                            //Add a try catch so that bad logic from one received message doesn't
-                            //cause the Update method to exit without processing other received messages.
                             topicInfo.OnMessageReceived(data);
                         }
-                        catch (Exception e)
-                        {
-                            Debug.LogException(e);
-                        }
-
                     }
+                }
+                catch (Exception e)
+                {
+                    Debug.LogException(e);
                 }
             }
         }
@@ -911,6 +912,10 @@ namespace Unity.Robotics.ROSTCPConnector
                         }
                     }
                     break;
+                case SysCommand.k_SysCommand_ClockInfo:
+                    {
+                        throw new Exception($"Sys command {SysCommand.k_SysCommand_ClockInfo} should not reach here before being handled.");
+                    }
             }
         }
 
@@ -1156,12 +1161,21 @@ namespace Unity.Robotics.ROSTCPConnector
                 try
                 {
                     EndpointMessageContents content = await ReadMessageContents(connectionInfo.NetworkStream, connectionInfo.SleepMilliseconds, readerCancellationToken);
-                    // Debug.Log($"Message {content.Item1} received");
                     connectionInfo.ConnectionState = ConnectionThreadState.Connected;
                     connectionInfo.Error = null;
 
-                    if (content.topicName != "") // ignore keepalive messages
+                    if (content.topicName == "")
+                    {
+                        // ignore keepalive messages
+                    } else if (content.topicName == SysCommand.k_SysCommand_ClockInfo)
+                    {
+                        SysCommand_ClockInfo sysCommandClockInfo = JsonUtility.FromJson<SysCommand_ClockInfo>(Encoding.UTF8.GetString(content.messageData));
+                        RosTimeHelper.OnSysCommandClockInfoReceived(sysCommandClockInfo);
+                    }
+                    else
+                    {
                         connectionInfo.IncomingQueue.Enqueue(content);
+                    }
                 }
                 catch (OperationCanceledException)
                 {

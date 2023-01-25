@@ -26,6 +26,7 @@ namespace Unity.Robotics.ROSTCPConnector
         public const string k_SysCommand_RemoveUnityService = "__remove_unity_service";
         public const string k_SysCommand_Ping = "__ping";
         public const string k_SysCommand_PingResponse = "__ping_response";
+        public const string k_SysCommand_ClockInfo = "__clock_info";
 
         public abstract string Command
         {
@@ -130,5 +131,13 @@ namespace Unity.Robotics.ROSTCPConnector
         public string message_name;
         public int queue_size;
         public bool latch;
+    }
+
+    public struct SysCommand_ClockInfo
+    {
+        public uint clock_secs;
+        public uint clock_nsecs;
+        public uint wall_secs;
+        public uint wall_nsecs;
     }
 }
