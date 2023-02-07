@@ -42,9 +42,16 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
                 this.simWallTimeOfReceivedInfo = simulatorWallTime;
             }
 
+#if ROS2
+            public TimeMsg ClockTime => new TimeMsg((int) sysCommandClockInfo.clock_secs, sysCommandClockInfo.clock_nsecs);
+
+            public TimeMsg EndpointWallTime => new TimeMsg((int) sysCommandClockInfo.wall_secs, sysCommandClockInfo.wall_nsecs);
+#else
             public TimeMsg ClockTime => new TimeMsg(sysCommandClockInfo.clock_secs, sysCommandClockInfo.clock_nsecs);
 
             public TimeMsg EndpointWallTime => new TimeMsg(sysCommandClockInfo.wall_secs, sysCommandClockInfo.wall_nsecs);
+#endif
+
         }
 
         private static object clockListLockObj = new object();
@@ -124,7 +131,13 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
             long subSecondTicks = ticksSinceEpochUtc - (secondsSinceEpoch * TimeSpan.TicksPerSecond);
             long nanoSeconds = subSecondTicks * 100;
 
+
+
+#if ROS2
+            return new TimeMsg((int)secondsSinceEpoch, (uint)nanoSeconds);
+#else
             return new TimeMsg((uint)secondsSinceEpoch, (uint)nanoSeconds);
+#endif
         }
 
         public static DurationMsg FromTo(TimeMsg from, TimeMsg to)
@@ -153,7 +166,11 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
                 resultNsecs -= _NanoSeconsPerSecond;
                 resultSecs += 1;
             }
+#if ROS2
+            return new TimeMsg((int)resultSecs, resultNsecs);
+#else
             return new TimeMsg(resultSecs, resultNsecs);
+#endif
         }
 
         public static double ToSec(DurationMsg durationMsg)
