@@ -30,98 +30,187 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
             }
         }
 
-
-        private class ClockData
+        public static TimeTracker WallTimeTracker
         {
-            public readonly SysCommand_ClockInfo sysCommandClockInfo;
-            public readonly TimeMsg simWallTimeOfReceivedInfo;
+            get;
+        } = new TimeTracker();
+        private static TimeTracker ExternalClockTimeTracker = new TimeTracker();
 
-            public ClockData(SysCommand_ClockInfo sysCommandClockInfo, TimeMsg simulatorWallTime)
+        public class TimeTracker
+        {
+
+            public DateTime receivedTimeOfPreviousValue;
+
+            private TimeMsg previousValue = null;
+            private TimeMsg goalValue = null;
+
+            public double lerpTime = 1.0f;
+            public bool useLinearInterpolation = true;
+
+            public float timeScale = 1.0f;
+
+            public void Reset()
             {
-                this.sysCommandClockInfo = sysCommandClockInfo;
-                this.simWallTimeOfReceivedInfo = simulatorWallTime;
+                this.previousValue = null;
             }
 
-#if ROS2
-            public TimeMsg ClockTime => new TimeMsg((int) sysCommandClockInfo.clock_secs, sysCommandClockInfo.clock_nsecs);
+            public void OnNewValueReceived(TimeMsg newGoalValue, bool resetTime = false)
+            {
+                if (resetTime)
+                {
+                    JumpValueTo(newGoalValue);
+                    return;
+                }
 
-            public TimeMsg EndpointWallTime => new TimeMsg((int) sysCommandClockInfo.wall_secs, sysCommandClockInfo.wall_nsecs);
-#else
-            public TimeMsg ClockTime => new TimeMsg(sysCommandClockInfo.clock_secs, sysCommandClockInfo.clock_nsecs);
+                if (previousValue == null)
+                {
+                    JumpValueTo(newGoalValue);
+                    return;
+                }
 
-            public TimeMsg EndpointWallTime => new TimeMsg(sysCommandClockInfo.wall_secs, sysCommandClockInfo.wall_nsecs);
-#endif
+                this.previousValue = GetCurrentValue();
+                this.goalValue = newGoalValue;
+                this.receivedTimeOfPreviousValue = DateTime.Now;
+            }
 
+            public void JumpValueTo(TimeMsg newTime)
+            {
+                previousValue = newTime;
+                goalValue = newTime;
+                receivedTimeOfPreviousValue = DateTime.Now;
+            }
+
+            public TimeMsg GetCurrentValue()
+            {
+                if (previousValue == null)
+                {
+                    return new TimeMsg(0, 0);
+                }
+                DateTime currentTime = DateTime.Now;
+                TimeSpan timeSinceLastValueReceived = currentTime - receivedTimeOfPreviousValue;
+
+                double realTimeSinceLastValueReceivedSeconds = timeSinceLastValueReceived.TotalSeconds;
+                double scaledTimeSinceLastValueReceivedSeconds = realTimeSinceLastValueReceivedSeconds * timeScale;
+
+                DurationMsg scaledDurationSinceLastValueReceived = FromSec(scaledTimeSinceLastValueReceivedSeconds);
+
+                DurationMsg fromPreviousToGoal = FromTo(previousValue, goalValue);
+                double fromPreviousToGoalTotalSeconds = ToSec(fromPreviousToGoal);
+
+                double t = realTimeSinceLastValueReceivedSeconds / lerpTime;
+                double interpolationMultiplier = CalculateInterpolationMultiplier(t);
+                double movementTowardsGoalTimeSeconds = fromPreviousToGoalTotalSeconds * interpolationMultiplier;
+                DurationMsg movementTowardsGoalTime = FromSec(movementTowardsGoalTimeSeconds);
+
+                // Add the movement towards the goal time.
+                TimeMsg currentTimeValue = Add(previousValue, movementTowardsGoalTime);
+                // Add time since the message was received.
+                currentTimeValue = Add(currentTimeValue, scaledDurationSinceLastValueReceived);
+
+                return currentTimeValue;
+            }
+
+            public DurationMsg GetFromCurrentToGoal()
+            {
+                if (previousValue == null) return new DurationMsg(0, 0);
+                return FromTo(previousValue, goalValue);
+            }
+
+            public TimeMsg GetGoalWithExtrapolation()
+            {
+                if (previousValue == null)
+                {
+                    return new TimeMsg(0, 0);
+                }
+                DateTime currentTime = DateTime.Now;
+                TimeSpan timeSinceLastValueReceived = currentTime - receivedTimeOfPreviousValue;
+
+                double realTimeSinceLastValueReceivedSeconds = timeSinceLastValueReceived.TotalSeconds;
+                double scaledTimeSinceLastValueReceivedSeconds = realTimeSinceLastValueReceivedSeconds * timeScale;
+
+                DurationMsg scaledDurationSinceLastValueReceived = FromSec(scaledTimeSinceLastValueReceivedSeconds);
+
+                // Add time since the message was received.
+                TimeMsg extrapolatedGoalTime = Add(goalValue, scaledDurationSinceLastValueReceived);
+
+                return extrapolatedGoalTime;
+            }
+
+            private double CalculateInterpolationMultiplier(double t)
+            {
+                if (t < 0) return 0.0f;
+                if (t > 1) return 1.0f;
+
+                if (useLinearInterpolation)
+                {
+                    return t;
+                }
+                else
+                {
+                    //SmoothStep
+                    double tSquared = t * t;
+                    double tCubed = tSquared * t;
+                    double multiplier = (-2 * tCubed) + (3 * tSquared);
+                    return multiplier;
+                }
+            }
         }
 
-        private static object clockListLockObj = new object();
 
-        private static LinkedList<ClockData> clockDataQueue = new LinkedList<ClockData>();
+
+        public static bool ExternalClockIsPaused
+        {
+            get;
+            private set;
+        }
+
+        public static float ExternalClockTimeScale
+        {
+            get;
+            private set;
+        } = 1.0f;
+
+        public static int ClockInfoUpdateCount
+        {
+            get;
+            private set;
+        } = 0;
+
+        public static void OnRosConnectionEstablished()
+        {
+            WallTimeTracker.Reset();
+            ExternalClockTimeTracker.Reset();
+        }
 
         public static void OnSysCommandClockInfoReceived(SysCommand_ClockInfo sysCommandClockInfo)
         {
-            lock (clockListLockObj)
-            {
-                if (clockDataQueue.Count > _ClockQueueMaxLength)
-                {
-                    clockDataQueue.RemoveLast();
-                }
 
-                TimeMsg simulatorWallTime = GetSimulatorWallTime();
-                ClockData clockData = new ClockData(sysCommandClockInfo, simulatorWallTime);
-                clockDataQueue.AddFirst(clockData);
-            }
-        }
+            TimeMsg receivedWallTime = new TimeMsg(sysCommandClockInfo.wall_secs, sysCommandClockInfo.wall_nsecs);
+            TimeMsg receivedClockTime = new TimeMsg(sysCommandClockInfo.clock_secs, sysCommandClockInfo.clock_nsecs);
 
-        private static bool TryGetMostRecentClockData(out ClockData clockData)
-        {
-            clockData = null;
-            lock (clockListLockObj)
-            {
-                if (clockDataQueue.Count > 0)
-                {
-                    clockData = clockDataQueue.First.Value;
-                }
-            }
+            WallTimeTracker.OnNewValueReceived(receivedWallTime);
 
-            return clockData != null;
+            bool resetClockTime = sysCommandClockInfo.should_reset_clock_time || sysCommandClockInfo.is_paused;
+            ExternalClockTimeTracker.OnNewValueReceived(receivedClockTime, resetClockTime);
+
+            ExternalClockIsPaused = sysCommandClockInfo.is_paused;
+            ExternalClockTimeScale = sysCommandClockInfo.time_scale;
+            ExternalClockTimeTracker.timeScale = sysCommandClockInfo.time_scale;
+
+            ClockInfoUpdateCount++;
         }
 
         public static TimeMsg GetExternalSimulatedTime()
         {
-            if (!TryGetMostRecentClockData(out ClockData clockData))
-            {
-                Debug.LogWarning("No clock data received from the ROS-TCP-Endpoint, defaulting to 0.");
-                return new TimeMsg(0, 0);
-            }
-
-            TimeMsg simulatorWallTime = GetSimulatorWallTime();
-
-            DurationMsg additionalTime = FromTo(clockData.simWallTimeOfReceivedInfo, simulatorWallTime);
-            TimeMsg result = Add(clockData.ClockTime, additionalTime);
-
-            return result;
+            throw new NotImplementedException("TODO - Implement.");
         }
 
         public static TimeMsg GetRosWallTime()
         {
-            TimeMsg simulatorWallTime = GetSimulatorWallTime();
-            return simulatorWallTime;
-            //TODO - Implement properly.
-
-            if (!TryGetMostRecentClockData(out ClockData clockData))
-            {
-                Debug.LogWarning("No clock data received from the ROS-TCP-Endpoint, defaulting to simulated wall time.");
-                return simulatorWallTime;
-            }
-
-            DurationMsg additionalTime = FromTo(clockData.simWallTimeOfReceivedInfo, simulatorWallTime);
-            TimeMsg result = Add(clockData.EndpointWallTime, additionalTime);
-
-            return result;
+            return WallTimeTracker.GetCurrentValue();
         }
 
-        public static TimeMsg GetSimulatorWallTime()
+        public static TimeMsg GetEpochWallTime()
         {
             DateTime epochUtc = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
             long ticksSinceEpochUtc = DateTime.UtcNow.Ticks - epochUtc.Ticks;
@@ -130,8 +219,6 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
 
             long subSecondTicks = ticksSinceEpochUtc - (secondsSinceEpoch * TimeSpan.TicksPerSecond);
             long nanoSeconds = subSecondTicks * 100;
-
-
 
 #if ROS2
             return new TimeMsg((int)secondsSinceEpoch, (uint)nanoSeconds);
@@ -176,6 +263,24 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
         public static double ToSec(DurationMsg durationMsg)
         {
             return durationMsg.sec + (durationMsg.nanosec* 0.000000001);
+        }
+
+        public static DurationMsg FromSec(double totalSeconds)
+        {
+            int totalSecondsInt = (int)totalSeconds;
+            double remainder = totalSeconds - totalSecondsInt;
+            if (remainder < 0)
+            {
+                totalSecondsInt--;
+                remainder = 1.0 + remainder;
+            }
+
+            uint remainderNanoSecondsInt = (uint) (remainder * 1e9);
+#if ROS2
+            return new DurationMsg(totalSecondsInt, remainderNanoSecondsInt);
+#else
+            return new DurationMsg(totalSecondsInt, (int)remainderNanoSecondsInt);
+#endif
         }
 
 

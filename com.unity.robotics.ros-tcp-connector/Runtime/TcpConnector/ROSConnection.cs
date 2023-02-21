@@ -656,6 +656,8 @@ namespace Unity.Robotics.ROSTCPConnector
                 topicInfo.OnConnectionEstablished(stream);
 
             RefreshTopicsList();
+
+            RosTimeHelper.OnRosConnectionEstablished();
         }
 
         void OnConnectionLostCallback(bool connectionEndedUnexpectedly)

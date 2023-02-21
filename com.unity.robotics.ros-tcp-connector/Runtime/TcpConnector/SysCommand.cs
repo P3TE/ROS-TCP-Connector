@@ -139,5 +139,8 @@ namespace Unity.Robotics.ROSTCPConnector
         public uint clock_nsecs;
         public uint wall_secs;
         public uint wall_nsecs;
+        public float time_scale;
+        public bool is_paused;
+        public bool should_reset_clock_time;
     }
 }
