@@ -200,14 +200,67 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
             ClockInfoUpdateCount++;
         }
 
-        public static TimeMsg GetExternalSimulatedTime()
+        private static DateTime startTimeOfFrame = DateTime.Now;
+        private static int frameCountOfFixedUpdateTime = -1;
+
+        private static float measuredTimeOfFrameStartUnity = 0.0f;
+
+        private static TimeMsg wallTimeAtFrameStart = new TimeMsg(0, 0);
+        private static TimeMsg clockTimeAtFrameStart = new TimeMsg(0, 0);
+
+        public static void OnFixedUpdate(int frameCount)
         {
-            throw new NotImplementedException("TODO - Implement.");
+            if (frameCountOfFixedUpdateTime != frameCount)
+            {
+                //Only grab the first fixed update of the frame.
+                frameCountOfFixedUpdateTime = frameCount;
+                startTimeOfFrame = DateTime.Now;
+            }
         }
 
-        public static TimeMsg GetRosWallTime()
+        public static void OnRegularUpdate(float unityTime, int frameCount)
         {
-            return WallTimeTracker.GetCurrentValue();
+            DateTime currentTime = DateTime.Now;
+
+            wallTimeAtFrameStart = WallTimeTracker.GetCurrentValue();
+            clockTimeAtFrameStart = ExternalClockTimeTracker.GetCurrentValue();
+            measuredTimeOfFrameStartUnity = unityTime;
+
+            if (frameCount == frameCountOfFixedUpdateTime)
+            {
+                //There was a fixed update this frame, we can account for the additional delay processing the fixed update.
+                float secondsSinceStartOfFrame = (float) (currentTime - startTimeOfFrame).TotalSeconds;
+                secondsSinceStartOfFrame = Mathf.Min(secondsSinceStartOfFrame, Time.maximumDeltaTime);
+
+                //Debug.Log($"There was a fixed update this frame: secondsSinceStartOfFrame = {secondsSinceStartOfFrame}");
+
+                measuredTimeOfFrameStartUnity -= secondsSinceStartOfFrame;
+                DurationMsg startOfFrameAddedDuration = FromSec(-secondsSinceStartOfFrame);
+                wallTimeAtFrameStart = Add(wallTimeAtFrameStart, startOfFrameAddedDuration);
+                clockTimeAtFrameStart = Add(clockTimeAtFrameStart, startOfFrameAddedDuration);
+            }
+
+        }
+
+        private static DurationMsg GetUnityDurationSinceLastStoredTime(float unityTime)
+        {
+            float unitySecondsSinceLastStoredTime = unityTime - measuredTimeOfFrameStartUnity;
+            DurationMsg unityDurationSinceLastStoredTime = FromSec(unitySecondsSinceLastStoredTime);
+            return unityDurationSinceLastStoredTime;
+        }
+
+        public static TimeMsg GetExternalSimulatedTime(float unityTime)
+        {
+            DurationMsg offset = GetUnityDurationSinceLastStoredTime(unityTime);
+            TimeMsg result = Add(clockTimeAtFrameStart, offset);
+            return result;
+        }
+
+        public static TimeMsg GetRosWallTime(float unityTime)
+        {
+            DurationMsg offset = GetUnityDurationSinceLastStoredTime(unityTime);
+            TimeMsg result = Add(wallTimeAtFrameStart, offset);
+            return result;
         }
 
         public static TimeMsg GetEpochWallTime()
