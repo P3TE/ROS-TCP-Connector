@@ -9,7 +9,28 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
 {
     public class RosTimeHelper
     {
-        private const int _ClockQueueMaxLength = 5;
+
+        private static RosTimeHelper _instance = null;
+
+        public static RosTimeHelper Instance
+        {
+            get
+            {
+                if (_instance == null)
+                {
+                    _instance = new RosTimeHelper();
+                }
+                return _instance;
+            }
+        }
+
+        private ScaledTimeEstimator scaledTimeEstimator = new ScaledTimeEstimator();
+
+        /*public void OnFixedUpdate(int frameCount)
+        {
+            //scaledTimeEstimator.UpdateAndGetEstimation();
+        }*/
+
 
         public enum RosTimeType
         {
