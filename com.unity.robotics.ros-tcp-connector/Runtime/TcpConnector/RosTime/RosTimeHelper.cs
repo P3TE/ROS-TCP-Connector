@@ -36,6 +36,8 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
         } = new TimeTracker();
         private static TimeTracker ExternalClockTimeTracker = new TimeTracker();
 
+        private static bool timeTrackersInitialised = false;
+
         public class TimeTracker
         {
 
@@ -49,9 +51,15 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
 
             public float timeScale = 1.0f;
 
+            public bool jumpToNextValue = true;
+
             public void Reset()
             {
-                this.previousValue = null;
+                jumpToNextValue = true;
+                if (previousValue == null)
+                {
+                    JumpValueTo(new TimeMsg(0, 0));
+                }
             }
 
             public void OnNewValueReceived(TimeMsg newGoalValue, bool resetTime = false)
@@ -62,8 +70,9 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
                     return;
                 }
 
-                if (previousValue == null)
+                if (jumpToNextValue)
                 {
+                    jumpToNextValue = false;
                     JumpValueTo(newGoalValue);
                     return;
                 }
@@ -178,8 +187,23 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
 
         public static void OnRosConnectionEstablished()
         {
+            InitialiseTimeTrackers();
+        }
+
+        private static void InitialiseTimeTrackers()
+        {
             WallTimeTracker.Reset();
             ExternalClockTimeTracker.Reset();
+        }
+
+        private static void InitialiseTimeTrackersIfApplicable()
+        {
+            if (timeTrackersInitialised)
+            {
+                return;
+            }
+            timeTrackersInitialised = true;
+            InitialiseTimeTrackers();
         }
 
         public static void OnSysCommandClockInfoReceived(SysCommand_ClockInfo sysCommandClockInfo)
@@ -210,6 +234,8 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
 
         public static void OnFixedUpdate(int frameCount)
         {
+            InitialiseTimeTrackersIfApplicable();
+            Debug.Log($"OnFixedUpdate, Time.timeMS = {((Time.time % 1) * 1000)}, frameCount = {frameCount}");
             if (frameCountOfFixedUpdateTime != frameCount)
             {
                 //Only grab the first fixed update of the frame.
@@ -220,6 +246,7 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
 
         public static void OnRegularUpdate(float unityTime, int frameCount)
         {
+            InitialiseTimeTrackersIfApplicable();
             DateTime currentTime = DateTime.Now;
 
             wallTimeAtFrameStart = WallTimeTracker.GetCurrentValue();
@@ -240,6 +267,8 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
                 clockTimeAtFrameStart = Add(clockTimeAtFrameStart, startOfFrameAddedDuration);
             }
 
+            Debug.Log($"OnRegularUpdate, Time.timeMS = {((Time.time % 1) * 1000)}, measuredTimeOfFrameStartUnityMS = {((measuredTimeOfFrameStartUnity % 1) * 1000)}, frameCount = {frameCount}");
+
         }
 
         private static DurationMsg GetUnityDurationSinceLastStoredTime(float unityTime)
@@ -259,7 +288,10 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
         public static TimeMsg GetRosWallTime(float unityTime)
         {
             DurationMsg offset = GetUnityDurationSinceLastStoredTime(unityTime);
+            Debug.Log($"wallTimeAtFrameStartMS = {wallTimeAtFrameStart.nanosec / 1e6}");
+            Debug.Log($"offsetMS = {offset.nanosec / 1e6}");
             TimeMsg result = Add(wallTimeAtFrameStart, offset);
+            Debug.Log($"resultMS = {result.nanosec / 1e6}");
             return result;
         }
 
