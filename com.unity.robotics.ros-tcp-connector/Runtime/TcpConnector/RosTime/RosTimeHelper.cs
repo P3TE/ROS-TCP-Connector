@@ -261,6 +261,23 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
 #endif
         }
 
+        public static TimeMsg Subtract(TimeMsg timeMsg, DurationMsg subtractedDuration)
+        {
+            int resultSecs = (int) timeMsg.sec - (int) subtractedDuration.sec;
+            int resultNsecs = (int) timeMsg.nsecs - (int) subtractedDuration.nanosec;
+            const int _NanoSeconsPerSecond = 1000 * 1000 * 1000;
+            if (resultNsecs < 0)
+            {
+                resultNsecs += _NanoSeconsPerSecond;
+                resultSecs -= 1;
+            }
+#if ROS2
+            return new TimeMsg((int)resultSecs, (uint) resultNsecs);
+#else
+            return new TimeMsg((uint)resultSecs, (uint) resultNsecs);
+#endif
+        }
+
         public static double ToSec(DurationMsg durationMsg)
         {
             return durationMsg.sec + (durationMsg.nanosec* 0.000000001);
