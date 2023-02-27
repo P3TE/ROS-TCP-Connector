@@ -1,11 +1,12 @@
 using System;
 using RosMessageTypes.BuiltinInterfaces;
+using UnityEngine;
 
 namespace Unity.Robotics.ROSTCPConnector.RosTime
 {
     public class ExternalTimeTracker
     {
-        private const double _MaximumDeviationSecondsBeforeJump = 1.0f;
+        private const double _MaximumDeviationSecondsBeforeJump = 0.1f;
         private const double _MaximumCompensationChangeSecondsPerSecond = 0.025f;
 
         private readonly ScaledTimeEstimator scaledTimeEstimator;
@@ -97,6 +98,7 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
             DurationMsg timeSinceLastReceivedValue =
                 RosTimeHelper.FromTo(lastRecordedTimeScaledTimeEstimate, scaledTimeEstimate);
             double timeSinceLastReceivedValueSeconds = RosTimeHelper.ToSec(timeSinceLastReceivedValue);
+            Debug.Log($"timeSinceLastReceivedValueSeconds = {timeSinceLastReceivedValueSeconds}");
 
             TimeMsg latestPlusElapsedTime = RosTimeHelper.Add(latestTimeEstimate, timeSinceLastReceivedValue);
 

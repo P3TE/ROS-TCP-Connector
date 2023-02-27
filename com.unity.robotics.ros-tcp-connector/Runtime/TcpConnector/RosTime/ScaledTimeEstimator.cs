@@ -14,9 +14,9 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
         private DateTime timeOfLastEstimationUpdate = DateTime.Now;
         private bool setupPerformed = false;
 
-        public float TimeScale => timeScale;
+        public virtual float TimeScale => timeScale;
 
-        public bool IsPaused => isPaused;
+        public virtual bool IsPaused => isPaused;
 
         private void PerformSetup()
         {
@@ -24,6 +24,8 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
             timeOfLastEstimationUpdate = DateTime.Now;
             timeEstimate = new TimeMsg(0, 0);
         }
+
+        public virtual float MaximumDeltaTime => RosTimeHelper._MaximumDeltaTime * 5;
 
         public TimeMsg UpdateAndGetEstimation()
         {
@@ -34,12 +36,12 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
             {
                 TimeSpan timeSinceLastUpdate = now - timeOfLastEstimationUpdate;
                 double totalSecondsSinceLastUpdate = timeSinceLastUpdate.TotalSeconds;
-                if (totalSecondsSinceLastUpdate > RosTimeHelper._MaximumDeltaTime)
+                if (totalSecondsSinceLastUpdate > MaximumDeltaTime)
                 {
                     //Add a limit to the amount estimation can progress in a single update.
-                    totalSecondsSinceLastUpdate = RosTimeHelper._MaximumDeltaTime;
+                    totalSecondsSinceLastUpdate = MaximumDeltaTime;
                 }
-                double scaledPassedTime = totalSecondsSinceLastUpdate * timeScale;
+                double scaledPassedTime = totalSecondsSinceLastUpdate * TimeScale;
                 DurationMsg asDurationMessage = RosTimeHelper.FromSec(scaledPassedTime);
                 timeEstimate = RosTimeHelper.Add(timeEstimate, asDurationMessage);
             }

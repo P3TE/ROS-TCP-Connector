@@ -26,7 +26,13 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
             }
         }
 
-        private ScaledTimeEstimator ScaledTimeEstimator
+        private ScaledTimeEstimator ScaledTimeEstimate
+        {
+            get;
+            set;
+        }
+
+        private WallTimeOffsetEstimator WallTimeOffsetEstimate
         {
             get;
             set;
@@ -44,7 +50,8 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
             private set;
         }
 
-        private TimeMsg startTimeOfFrame = new TimeMsg(0, 0);
+        private TimeMsg startTimeOfFrameExternalClock = new TimeMsg(0, 0);
+        private TimeMsg startTimeOfFrameWall = new TimeMsg(0, 0);
         private int frameCountOfFixedUpdateTime = -1;
 
         private float measuredTimeOfFrameStartUnity = 0.0f;
@@ -54,9 +61,11 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
 
         private RosTimeHelper()
         {
-            ScaledTimeEstimator = new ScaledTimeEstimator();
-            WallTimeTracker = new ExternalTimeTracker(ScaledTimeEstimator);
-            ExternalClockTimeTracker = new ExternalTimeTracker(ScaledTimeEstimator);
+            WallTimeOffsetEstimate = new WallTimeOffsetEstimator();
+            WallTimeTracker = new ExternalTimeTracker(WallTimeOffsetEstimate);
+
+            ScaledTimeEstimate = new ScaledTimeEstimator();
+            ExternalClockTimeTracker = new ExternalTimeTracker(ScaledTimeEstimate);
         }
 
         public enum RosTimeType
@@ -78,9 +87,9 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
             }
         }
 
-        public float TimeScale => ScaledTimeEstimator.TimeScale;
+        public float TimeScale => ScaledTimeEstimate.TimeScale;
 
-        public bool IsPaused => ScaledTimeEstimator.IsPaused;
+        public bool IsPaused => ScaledTimeEstimate.IsPaused;
 
         public static int ClockInfoUpdateCount
         {
@@ -106,9 +115,12 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
             TimeMsg receivedWallTime = new TimeMsg(sysCommandClockInfo.wall_secs, sysCommandClockInfo.wall_nsecs);
             TimeMsg receivedClockTime = new TimeMsg(sysCommandClockInfo.clock_secs, sysCommandClockInfo.clock_nsecs);
 
-            ScaledTimeEstimator.UpdateTimeParameters(sysCommandClockInfo.time_scale, sysCommandClockInfo.is_paused);
+            bool resetClockTime = sysCommandClockInfo.should_reset_clock_time
+                                  || IsPaused != sysCommandClockInfo.is_paused; //A change in paused state.
 
-            bool resetClockTime = sysCommandClockInfo.should_reset_clock_time || sysCommandClockInfo.is_paused;
+            ScaledTimeEstimate.UpdateTimeParameters(sysCommandClockInfo.time_scale, sysCommandClockInfo.is_paused);
+            WallTimeOffsetEstimate.UpdateTimeParameters(sysCommandClockInfo.time_scale, sysCommandClockInfo.is_paused);
+
             WallTimeTracker.OnNewValueReceived(receivedWallTime, resetClockTime);
             ExternalClockTimeTracker.OnNewValueReceived(receivedClockTime, resetClockTime);
 
@@ -118,14 +130,15 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
         public void OnFixedUpdate(int frameCount)
         {
 
-            TimeMsg currentScaledTime = ScaledTimeEstimator.UpdateAndGetEstimation();
+            TimeMsg currentExternalClockTimeEstimate = ScaledTimeEstimate.UpdateAndGetEstimation();
+            TimeMsg currentWallTimeEstimate = WallTimeOffsetEstimate.UpdateAndGetEstimation();
 
-            Debug.Log($"OnFixedUpdate, Time.timeMS = {((Time.time % 1) * 1000)}, frameCount = {frameCount}");
             if (frameCountOfFixedUpdateTime != frameCount)
             {
                 //Only grab the first fixed update of the frame.
                 frameCountOfFixedUpdateTime = frameCount;
-                startTimeOfFrame = currentScaledTime;
+                startTimeOfFrameExternalClock = currentExternalClockTimeEstimate;
+                startTimeOfFrameWall = currentWallTimeEstimate;
             }
         }
 
@@ -134,11 +147,12 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
 
             _MaximumDeltaTime = Time.maximumDeltaTime;
 
-            TimeMsg scaledTime = ScaledTimeEstimator.UpdateAndGetEstimation();
+            TimeMsg scaledTimeExternalClock = ScaledTimeEstimate.UpdateAndGetEstimation();
+            TimeMsg scaledTimeWall = WallTimeOffsetEstimate.UpdateAndGetEstimation();
 
             if (WallTimeTracker.AnyMessagesReceived)
             {
-                wallTimeAtFrameStart = WallTimeTracker.GetCurrentEstimate(scaledTime);
+                wallTimeAtFrameStart = WallTimeTracker.GetCurrentEstimate(scaledTimeWall);
             }
             else
             {
@@ -146,20 +160,20 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
                 wallTimeAtFrameStart = GetEpochWallTime();
             }
 
-            externalClockTimeAtFrameStart = ExternalClockTimeTracker.GetCurrentEstimate(scaledTime);
+            externalClockTimeAtFrameStart = ExternalClockTimeTracker.GetCurrentEstimate(scaledTimeExternalClock);
             measuredTimeOfFrameStartUnity = unityTime;
 
             if (frameCount == frameCountOfFixedUpdateTime)
             {
                 //There was a fixed update this frame, we can account for the additional delay processing the fixed update.
-                DurationMsg durationSinceStartOfFrame = FromTo(startTimeOfFrame, scaledTime);
-                float secondsSinceStartOfFrame = (float) ToSec(durationSinceStartOfFrame);
-                secondsSinceStartOfFrame = Mathf.Min(secondsSinceStartOfFrame, Time.maximumDeltaTime);
+                DurationMsg durationSinceStartOfFrameExternalClock = FromTo(startTimeOfFrameExternalClock, scaledTimeExternalClock);
+                float secondsSinceStartOfFrameExternalClock = (float) ToSec(durationSinceStartOfFrameExternalClock);
+                secondsSinceStartOfFrameExternalClock = Mathf.Min(secondsSinceStartOfFrameExternalClock, Time.maximumDeltaTime);
 
                 //Debug.Log($"There was a fixed update this frame: secondsSinceStartOfFrame = {secondsSinceStartOfFrame}");
 
-                measuredTimeOfFrameStartUnity -= secondsSinceStartOfFrame;
-                DurationMsg startOfFrameAddedDuration = FromSec(-secondsSinceStartOfFrame);
+                measuredTimeOfFrameStartUnity -= secondsSinceStartOfFrameExternalClock;
+                DurationMsg startOfFrameAddedDuration = FromSec(-secondsSinceStartOfFrameExternalClock);
                 wallTimeAtFrameStart = Add(wallTimeAtFrameStart, startOfFrameAddedDuration);
                 externalClockTimeAtFrameStart = Add(externalClockTimeAtFrameStart, startOfFrameAddedDuration);
             }
