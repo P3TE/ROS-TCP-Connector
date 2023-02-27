@@ -10,7 +10,11 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
 
         private readonly ScaledTimeEstimator scaledTimeEstimator;
 
-        private bool anyMessagesReceived = false;
+        public bool AnyMessagesReceived
+        {
+            get;
+            private set;
+        } = false;
 
         private TimeMsg lastRecordedTimeScaledTimeEstimate = new TimeMsg(0, 0);
 
@@ -19,17 +23,24 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
 
         private TimeMsg latestTimeEstimate = new TimeMsg(0, 0);
 
+        public double GoalErrorAddedSeconds => goalErrorAddedSeconds;
+
         public ExternalTimeTracker(ScaledTimeEstimator scaledTimeEstimator)
         {
             this.scaledTimeEstimator = scaledTimeEstimator;
         }
 
+        public void Reset()
+        {
+            AnyMessagesReceived = false;
+        }
+
         public void OnNewValueReceived(TimeMsg newTimeValue, bool jumpToNewValue)
         {
 
-            if (!anyMessagesReceived)
+            if (!AnyMessagesReceived)
             {
-                anyMessagesReceived = true;
+                AnyMessagesReceived = true;
                 jumpToNewValue = true;
             }
 
@@ -71,7 +82,7 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
             }
 
             lastRecordedTimeScaledTimeEstimate = currentScaledTimeEstimate;
-            anyMessagesReceived = true;
+            AnyMessagesReceived = true;
         }
 
 

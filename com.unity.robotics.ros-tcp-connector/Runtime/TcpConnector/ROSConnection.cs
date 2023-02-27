@@ -657,7 +657,7 @@ namespace Unity.Robotics.ROSTCPConnector
 
             RefreshTopicsList();
 
-            RosTimeHelper.OnRosConnectionEstablished();
+            RosTimeHelper.Instance.OnRosConnectionEstablished();
         }
 
         void OnConnectionLostCallback(bool connectionEndedUnexpectedly)
@@ -678,6 +678,8 @@ namespace Unity.Robotics.ROSTCPConnector
             {
                 Debug.LogException(connectionThreadData.Error);
             }
+
+            RosTimeHelper.Instance.OnRosConnectionLost();
         }
 
         public void Disconnect()
@@ -1172,7 +1174,7 @@ namespace Unity.Robotics.ROSTCPConnector
                     } else if (content.topicName == SysCommand.k_SysCommand_ClockInfo)
                     {
                         SysCommand_ClockInfo sysCommandClockInfo = JsonUtility.FromJson<SysCommand_ClockInfo>(Encoding.UTF8.GetString(content.messageData));
-                        RosTimeHelper.OnSysCommandClockInfoReceived(sysCommandClockInfo);
+                        RosTimeHelper.Instance.OnSysCommandClockInfoReceived(sysCommandClockInfo);
                     }
                     else
                     {

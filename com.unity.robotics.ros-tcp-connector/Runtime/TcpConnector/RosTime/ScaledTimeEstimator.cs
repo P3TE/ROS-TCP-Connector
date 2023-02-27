@@ -14,6 +14,10 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
         private DateTime timeOfLastEstimationUpdate = DateTime.Now;
         private bool setupPerformed = false;
 
+        public float TimeScale => timeScale;
+
+        public bool IsPaused => isPaused;
+
         private void PerformSetup()
         {
             setupPerformed = true;
