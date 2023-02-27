@@ -10,6 +10,8 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
     public class RosTimeHelper
     {
 
+        public static float _MaximumDeltaTime = 0.33f;
+
         private static RosTimeHelper _instance = null;
 
         public static RosTimeHelper Instance
@@ -24,7 +26,11 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
             }
         }
 
-        private ScaledTimeEstimator scaledTimeEstimator;
+        private ScaledTimeEstimator ScaledTimeEstimator
+        {
+            get;
+            set;
+        }
 
         public ExternalTimeTracker WallTimeTracker
         {
@@ -48,9 +54,9 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
 
         private RosTimeHelper()
         {
-            scaledTimeEstimator = new ScaledTimeEstimator();
-            WallTimeTracker = new ExternalTimeTracker(scaledTimeEstimator);
-            ExternalClockTimeTracker = new ExternalTimeTracker(scaledTimeEstimator);
+            ScaledTimeEstimator = new ScaledTimeEstimator();
+            WallTimeTracker = new ExternalTimeTracker(ScaledTimeEstimator);
+            ExternalClockTimeTracker = new ExternalTimeTracker(ScaledTimeEstimator);
         }
 
         public enum RosTimeType
@@ -72,9 +78,9 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
             }
         }
 
-        public float TimeScale => scaledTimeEstimator.TimeScale;
+        public float TimeScale => ScaledTimeEstimator.TimeScale;
 
-        public bool IsPaused => scaledTimeEstimator.IsPaused;
+        public bool IsPaused => ScaledTimeEstimator.IsPaused;
 
         public static int ClockInfoUpdateCount
         {
@@ -100,7 +106,7 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
             TimeMsg receivedWallTime = new TimeMsg(sysCommandClockInfo.wall_secs, sysCommandClockInfo.wall_nsecs);
             TimeMsg receivedClockTime = new TimeMsg(sysCommandClockInfo.clock_secs, sysCommandClockInfo.clock_nsecs);
 
-            scaledTimeEstimator.UpdateTimeParameters(sysCommandClockInfo.time_scale, sysCommandClockInfo.is_paused);
+            ScaledTimeEstimator.UpdateTimeParameters(sysCommandClockInfo.time_scale, sysCommandClockInfo.is_paused);
 
             bool resetClockTime = sysCommandClockInfo.should_reset_clock_time || sysCommandClockInfo.is_paused;
             WallTimeTracker.OnNewValueReceived(receivedWallTime, resetClockTime);
@@ -112,7 +118,7 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
         public void OnFixedUpdate(int frameCount)
         {
 
-            TimeMsg currentScaledTime = scaledTimeEstimator.UpdateAndGetEstimation();
+            TimeMsg currentScaledTime = ScaledTimeEstimator.UpdateAndGetEstimation();
 
             Debug.Log($"OnFixedUpdate, Time.timeMS = {((Time.time % 1) * 1000)}, frameCount = {frameCount}");
             if (frameCountOfFixedUpdateTime != frameCount)
@@ -126,7 +132,9 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
         public void OnRegularUpdate(float unityTime, int frameCount)
         {
 
-            TimeMsg scaledTime = scaledTimeEstimator.UpdateAndGetEstimation();
+            _MaximumDeltaTime = Time.maximumDeltaTime;
+
+            TimeMsg scaledTime = ScaledTimeEstimator.UpdateAndGetEstimation();
 
             if (WallTimeTracker.AnyMessagesReceived)
             {
@@ -134,6 +142,7 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
             }
             else
             {
+                Debug.Log("No Wall Time Messages received...");
                 wallTimeAtFrameStart = GetEpochWallTime();
             }
 

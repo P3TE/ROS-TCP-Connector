@@ -34,10 +34,10 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
             {
                 TimeSpan timeSinceLastUpdate = now - timeOfLastEstimationUpdate;
                 double totalSecondsSinceLastUpdate = timeSinceLastUpdate.TotalSeconds;
-                if (totalSecondsSinceLastUpdate > Time.maximumDeltaTime)
+                if (totalSecondsSinceLastUpdate > RosTimeHelper._MaximumDeltaTime)
                 {
                     //Add a limit to the amount estimation can progress in a single update.
-                    totalSecondsSinceLastUpdate = Time.maximumDeltaTime;
+                    totalSecondsSinceLastUpdate = RosTimeHelper._MaximumDeltaTime;
                 }
                 double scaledPassedTime = totalSecondsSinceLastUpdate * timeScale;
                 DurationMsg asDurationMessage = RosTimeHelper.FromSec(scaledPassedTime);

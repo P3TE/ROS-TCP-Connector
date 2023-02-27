@@ -6,7 +6,7 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
     public class ExternalTimeTracker
     {
         private const double _MaximumDeviationSecondsBeforeJump = 1.0f;
-        private const double _MaximumCompensationChangeSecondsPerSecond = 0.1f;
+        private const double _MaximumCompensationChangeSecondsPerSecond = 0.025f;
 
         private readonly ScaledTimeEstimator scaledTimeEstimator;
 

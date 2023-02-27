@@ -1187,7 +1187,8 @@ namespace Unity.Robotics.ROSTCPConnector
                 catch (Exception e)
                 {
                     connectionInfo.Error = e;
-                    Debug.Log("Reader " + connectionInfo.ReaderIdx + " exception! " + e);
+                    Debug.LogError("Reader " + connectionInfo.ReaderIdx + " exception! " + e.Message);
+                    Debug.LogException(e);
                     connectionInfo.ConnectionState = ConnectionThreadState.WaitingForReadThread;
                 }
             }
