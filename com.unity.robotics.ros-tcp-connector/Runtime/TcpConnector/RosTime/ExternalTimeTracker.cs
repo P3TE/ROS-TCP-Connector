@@ -15,6 +15,10 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
         private const double _SmallestMultipleTimeStep = 0.25f;
         private const double _MinimumCatchupMultiplier = 5f;
 
+        // When a jump is requested, if that jump would go back in time, if the amount back in time is less
+        // than this value, it will instead not jump and gracefully move towards correct value.
+        private const double _MaximumSecondsBehindInJumpRequestNotToJump = 0.2f;
+
         private readonly ScaledTimeEstimator scaledTimeEstimator;
 
         public bool AnyMessagesReceived
@@ -42,8 +46,10 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
             AnyMessagesReceived = false;
         }
 
-        public void OnNewValueReceived(TimeMsg newTimeValue, bool jumpToNewValue)
+        public void OnNewValueReceived(TimeMsg newTimeValue, bool jumpToNewValueRequested)
         {
+
+            bool jumpToNewValue = false;
 
             if (!AnyMessagesReceived)
             {
@@ -59,6 +65,16 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
             // Using 'newTimeValue' determine how far off we were.
             DurationMsg fromOurEstimateToNewMessage = RosTimeHelper.FromTo(ourCurrentEstimate, newTimeValue);
             double fromOurEstimateToNewMessageSeconds = RosTimeHelper.ToSec(fromOurEstimateToNewMessage);
+            if (jumpToNewValueRequested)
+            {
+                bool smallReverseTimeJump = (fromOurEstimateToNewMessageSeconds < 0) &&
+                                            (fromOurEstimateToNewMessageSeconds > -_MaximumSecondsBehindInJumpRequestNotToJump);
+                //If there's jump requested but the amount is small and a reverse time jump, instead don't jump
+                if (!smallReverseTimeJump)
+                {
+                    jumpToNewValue = true;
+                }
+            }
             if (fromOurEstimateToNewMessageSeconds > _MaximumSecondsBehindBeforeJumpForward)
             {
                 // Jump immediately forward to the received value.
