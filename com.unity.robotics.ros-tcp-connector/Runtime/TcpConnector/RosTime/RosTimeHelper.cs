@@ -10,6 +10,8 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
     public class RosTimeHelper
     {
 
+        public static int _NanoSecondsPerSecond = 1000 * 1000 * 1000;
+
         public static float _MaximumDeltaTime = 0.33f;
 
         private static RosTimeHelper _instance = null;
@@ -156,7 +158,6 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
             }
             else
             {
-                Debug.Log("No Wall Time Messages received...");
                 wallTimeAtFrameStart = GetEpochWallTime();
             }
 
@@ -170,15 +171,11 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
                 float secondsSinceStartOfFrameExternalClock = (float) ToSec(durationSinceStartOfFrameExternalClock);
                 secondsSinceStartOfFrameExternalClock = Mathf.Min(secondsSinceStartOfFrameExternalClock, Time.maximumDeltaTime);
 
-                //Debug.Log($"There was a fixed update this frame: secondsSinceStartOfFrame = {secondsSinceStartOfFrame}");
-
                 measuredTimeOfFrameStartUnity -= secondsSinceStartOfFrameExternalClock;
                 DurationMsg startOfFrameAddedDuration = FromSec(-secondsSinceStartOfFrameExternalClock);
                 wallTimeAtFrameStart = Add(wallTimeAtFrameStart, startOfFrameAddedDuration);
                 externalClockTimeAtFrameStart = Add(externalClockTimeAtFrameStart, startOfFrameAddedDuration);
             }
-
-            Debug.Log($"OnRegularUpdate, Time.timeMS = {((Time.time % 1) * 1000)}, measuredTimeOfFrameStartUnityMS = {((measuredTimeOfFrameStartUnity % 1) * 1000)}, frameCount = {frameCount}");
 
         }
 
@@ -199,10 +196,7 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
         public TimeMsg GetRosWallTime(float unityTime)
         {
             DurationMsg offset = GetUnityDurationSinceLastStoredTime(unityTime);
-            Debug.Log($"wallTimeAtFrameStartMS = {wallTimeAtFrameStart.nanosec / 1e6}");
-            Debug.Log($"offsetMS = {offset.nanosec / 1e6}");
             TimeMsg result = Add(wallTimeAtFrameStart, offset);
-            Debug.Log($"resultMS = {result.nanosec / 1e6}");
             return result;
         }
 
@@ -236,6 +230,22 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
             return new DurationMsg(secDifference, (uint) nanoSecondDifference);
 #else
             return new DurationMsg(secDifference, nanoSecondDifference);
+#endif
+        }
+
+        public static DurationMsg Add(DurationMsg duration1, DurationMsg duration2)
+        {
+            int resultSecs = (duration1.sec + duration2.sec);
+            int resultNsecs = ((int)duration1.nanosec) + ((int)duration2.nanosec);
+            if (resultNsecs >= _NanoSecondsPerSecond)
+            {
+                resultSecs++;
+                resultNsecs -= _NanoSecondsPerSecond;
+            }
+#if ROS2
+            return new DurationMsg(resultSecs, (uint)resultNsecs);
+#else
+            return new DurationMsg(resultSecs, resultNsecs);
 #endif
         }
 

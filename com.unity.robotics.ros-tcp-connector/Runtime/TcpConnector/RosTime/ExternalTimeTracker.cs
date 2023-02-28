@@ -6,8 +6,14 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
 {
     public class ExternalTimeTracker
     {
-        private const double _MaximumDeviationSecondsBeforeJump = 0.1f;
+        private const double _MaximumSecondsBehindBeforeJumpForward = 0.1f;
+        private const double _MaximumSecondsAheadBeforeJumpBackward = 1.0f;
         private const double _MaximumCompensationChangeSecondsPerSecond = 0.025f;
+
+        // When attempting to go back in time, allow time to progress forward but by a smaller amount
+        // until it catches up, this is the multiplier of real time used as a minimium
+        private const double _SmallestMultipleTimeStep = 0.25f;
+        private const double _MinimumCatchupMultiplier = 5f;
 
         private readonly ScaledTimeEstimator scaledTimeEstimator;
 
@@ -53,13 +59,16 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
             // Using 'newTimeValue' determine how far off we were.
             DurationMsg fromOurEstimateToNewMessage = RosTimeHelper.FromTo(ourCurrentEstimate, newTimeValue);
             double fromOurEstimateToNewMessageSeconds = RosTimeHelper.ToSec(fromOurEstimateToNewMessage);
-            if (Math.Abs(fromOurEstimateToNewMessageSeconds) > _MaximumDeviationSecondsBeforeJump)
+            if (fromOurEstimateToNewMessageSeconds > _MaximumSecondsBehindBeforeJumpForward)
             {
-                // We are REALLY far off
-                // Jump immediately to the received value.
+                // Jump immediately forward to the received value.
                 jumpToNewValue = true;
-            }
-            else
+            } else if (fromOurEstimateToNewMessageSeconds < -_MaximumSecondsAheadBeforeJumpBackward)
+            {
+                Debug.LogWarning($"Jumping back in time! fromOurEstimateToNewMessageSeconds = {fromOurEstimateToNewMessageSeconds}");
+                // Jump immediately backward to the received value.
+                jumpToNewValue = true;
+            } else
             {
                 // We aren't too far off, stay with the current estimate and update
                 // the direction we are steering.
@@ -98,18 +107,44 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
             DurationMsg timeSinceLastReceivedValue =
                 RosTimeHelper.FromTo(lastRecordedTimeScaledTimeEstimate, scaledTimeEstimate);
             double timeSinceLastReceivedValueSeconds = RosTimeHelper.ToSec(timeSinceLastReceivedValue);
-            Debug.Log($"timeSinceLastReceivedValueSeconds = {timeSinceLastReceivedValueSeconds}");
-
-            TimeMsg latestPlusElapsedTime = RosTimeHelper.Add(latestTimeEstimate, timeSinceLastReceivedValue);
-
 
             // Compensate for errors in estimation by moving towards the current goal value.
-            double compensationChangeSeconds = Math.Sign(goalErrorAddedSeconds) * timeSinceLastReceivedValueSeconds * _MaximumCompensationChangeSecondsPerSecond;
-            double absGoalErrorAddedSeconds = Math.Abs(goalErrorAddedSeconds);
-            compensationChangeSeconds = Math.Clamp(compensationChangeSeconds, -absGoalErrorAddedSeconds, absGoalErrorAddedSeconds);
+            double absoluteCompensationChange =
+                timeSinceLastReceivedValueSeconds * _MaximumCompensationChangeSecondsPerSecond;
+            double compensationChangeSeconds;
+            if (goalErrorAddedSeconds > 0)
+            {
+                double addedTime = absoluteCompensationChange;
+                compensationChangeSeconds = Math.Min(addedTime, goalErrorAddedSeconds);
+            }
+            else
+            {
+                double removedTime = -absoluteCompensationChange;
+                if (goalErrorAddedSeconds < -_MaximumSecondsBehindBeforeJumpForward)
+                {
+                    double multiplier = goalErrorAddedSeconds / -_MaximumSecondsBehindBeforeJumpForward;
+                    multiplier = Math.Min(_MinimumCatchupMultiplier, multiplier);
+                    removedTime *= multiplier;
+                }
+                compensationChangeSeconds = Math.Max(removedTime, goalErrorAddedSeconds);
+            }
+
             DurationMsg compensationChange = RosTimeHelper.FromSec(compensationChangeSeconds);
 
-            TimeMsg currentEstimate = RosTimeHelper.Add(latestPlusElapsedTime, compensationChange);
+            DurationMsg totalAddedTime = RosTimeHelper.Add(timeSinceLastReceivedValue, compensationChange);
+
+            // When attempting to go back in time, allow time to progress forward but by a smaller amount
+            double totalAddedTimeSeconds = RosTimeHelper.ToSec(totalAddedTime);
+            double minimumAllowedTotalSeconds = _SmallestMultipleTimeStep * timeSinceLastReceivedValueSeconds;
+            totalAddedTimeSeconds = Math.Max(totalAddedTimeSeconds, minimumAllowedTotalSeconds);
+            totalAddedTime = RosTimeHelper.FromSec(totalAddedTimeSeconds);
+
+            if (totalAddedTime.sec == 0 && totalAddedTime.nanosec == 0)
+            {
+                totalAddedTime.nanosec = 1;
+            }
+
+            TimeMsg currentEstimate = RosTimeHelper.Add(latestTimeEstimate, totalAddedTime);
             return currentEstimate;
         }
 

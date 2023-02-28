@@ -8,15 +8,15 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
     {
         private TimeMsg timeEstimate = new TimeMsg(0, 0);
 
-        private float timeScale = 1.0f;
-        private bool isPaused = false;
+        private float _timeScale = 1.0f;
+        private bool _isPaused = false;
 
         private DateTime timeOfLastEstimationUpdate = DateTime.Now;
         private bool setupPerformed = false;
 
-        public virtual float TimeScale => timeScale;
+        public virtual float TimeScale => _timeScale;
 
-        public virtual bool IsPaused => isPaused;
+        public virtual bool IsPaused => _isPaused;
 
         private void PerformSetup()
         {
@@ -32,7 +32,7 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
             if (!setupPerformed) PerformSetup();
 
             DateTime now = DateTime.Now;
-            if (!isPaused && timeScale > 0)
+            if (!IsPaused && TimeScale > 0)
             {
                 TimeSpan timeSinceLastUpdate = now - timeOfLastEstimationUpdate;
                 double totalSecondsSinceLastUpdate = timeSinceLastUpdate.TotalSeconds;
@@ -53,8 +53,8 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
         public void UpdateTimeParameters(float newTimeScale, bool newIsPaused)
         {
             UpdateAndGetEstimation();
-            this.timeScale = newTimeScale;
-            this.isPaused = newIsPaused;
+            this._timeScale = newTimeScale;
+            this._isPaused = newIsPaused;
         }
 
 
