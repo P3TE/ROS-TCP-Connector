@@ -21,6 +21,8 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
 
         private readonly ScaledTimeEstimator scaledTimeEstimator;
 
+        private TimeMsg lastReceivedTimeMessage = new TimeMsg(0, 0);
+
         public bool AnyMessagesReceived
         {
             get;
@@ -44,10 +46,21 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
         public void Reset()
         {
             AnyMessagesReceived = false;
+            lastReceivedTimeMessage = new TimeMsg(0, 0);
         }
 
         public void OnNewValueReceived(TimeMsg newTimeValue, bool jumpToNewValueRequested)
         {
+
+            if (AnyMessagesReceived &&
+                lastReceivedTimeMessage.sec == newTimeValue.sec &&
+                lastReceivedTimeMessage.nanosec == newTimeValue.nanosec &&
+                !jumpToNewValueRequested)
+            {
+                //Nothing has changed.
+                return;
+            }
+            lastReceivedTimeMessage = newTimeValue;
 
             bool jumpToNewValue = false;
 
