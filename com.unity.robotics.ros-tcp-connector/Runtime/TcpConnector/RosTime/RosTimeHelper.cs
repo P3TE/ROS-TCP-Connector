@@ -14,6 +14,13 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
 
         public static float _MaximumDeltaTime = 0.33f;
 
+        public enum RosTimeType
+        {
+            PublishClock = 0,
+            UseWallTime = 1,
+            UseExternalClock = 2
+        }
+
         private static RosTimeHelper _instance = null;
 
         public static RosTimeHelper Instance
@@ -58,8 +65,17 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
 
         private float measuredTimeOfFrameStartUnity = 0.0f;
 
+        private float unityTimeStartOfFrameWall = 0.0f;
+        private float unityTimeStartOfFrameExternalClock = 0.0f;
+
         private TimeMsg wallTimeAtFrameStart = new TimeMsg(0, 0);
         private TimeMsg externalClockTimeAtFrameStart = new TimeMsg(0, 0);
+
+        public bool EditorSyncAllTimeTypes
+        {
+            get;
+            set;
+        } = false;
 
         private RosTimeHelper()
         {
@@ -70,28 +86,44 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
             ExternalClockTimeTracker = new ExternalTimeTracker(ScaledTimeEstimate);
         }
 
-        public enum RosTimeType
-        {
-            PublishClock = 0,
-            UseWallTime = 1,
-            UseExternalClock = 2
-        }
 
-        private static RosTimeType _currentTimeHandling = RosTimeType.PublishClock;
 
-        public static RosTimeType CurrentTimeHandling
+        private RosTimeType _currentTimeHandling = RosTimeType.PublishClock;
+
+        public RosTimeType CurrentTimeHandling
         {
             get => _currentTimeHandling;
             set
             {
                 _currentTimeHandling = value;
-                //TODO - Update the endpoint...
             }
         }
 
         public float TimeScale => ScaledTimeEstimate.TimeScale;
 
         public bool IsPaused => ScaledTimeEstimate.IsPaused;
+
+        public bool SyncWallTime
+        {
+            get
+            {
+#if UNITY_EDITOR
+                if (EditorSyncAllTimeTypes) return true;
+#endif
+                return CurrentTimeHandling == RosTimeType.UseWallTime;
+            }
+        }
+
+        public bool SyncExternalClock
+        {
+            get
+            {
+#if UNITY_EDITOR
+                if (EditorSyncAllTimeTypes) return true;
+#endif
+                return CurrentTimeHandling == RosTimeType.UseExternalClock;
+            }
+        }
 
         public static int ClockInfoUpdateCount
         {
@@ -114,17 +146,25 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
         public void OnSysCommandClockInfoReceived(SysCommand_ClockInfo sysCommandClockInfo)
         {
 
-            TimeMsg receivedWallTime = new TimeMsg(sysCommandClockInfo.wall_secs, sysCommandClockInfo.wall_nsecs);
-            TimeMsg receivedClockTime = new TimeMsg(sysCommandClockInfo.clock_secs, sysCommandClockInfo.clock_nsecs);
+            if (SyncWallTime)
+            {
+                TimeMsg receivedWallTime = new TimeMsg(sysCommandClockInfo.wall_secs, sysCommandClockInfo.wall_nsecs);
+                WallTimeOffsetEstimate.UpdateTimeParameters(sysCommandClockInfo.time_scale, sysCommandClockInfo.is_paused);
+                WallTimeTracker.OnNewValueReceived(receivedWallTime, false);
+            }
 
-            bool resetClockTime = sysCommandClockInfo.should_reset_clock_time
-                                  || IsPaused != sysCommandClockInfo.is_paused; //A change in paused state.
+            if (SyncExternalClock)
+            {
 
-            ScaledTimeEstimate.UpdateTimeParameters(sysCommandClockInfo.time_scale, sysCommandClockInfo.is_paused);
-            WallTimeOffsetEstimate.UpdateTimeParameters(sysCommandClockInfo.time_scale, sysCommandClockInfo.is_paused);
+                ScaledTimeEstimate.UpdateTimeParameters(sysCommandClockInfo.time_scale, sysCommandClockInfo.is_paused);
 
-            WallTimeTracker.OnNewValueReceived(receivedWallTime, resetClockTime);
-            ExternalClockTimeTracker.OnNewValueReceived(receivedClockTime, resetClockTime);
+                TimeMsg receivedClockTime = new TimeMsg(sysCommandClockInfo.clock_secs, sysCommandClockInfo.clock_nsecs);
+
+                bool resetClockTime = sysCommandClockInfo.should_reset_clock_time
+                                      || IsPaused != sysCommandClockInfo.is_paused; //A change in paused state.
+
+                ExternalClockTimeTracker.OnNewValueReceived(receivedClockTime, resetClockTime);
+            }
 
             ClockInfoUpdateCount++;
         }
@@ -132,71 +172,90 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
         public void OnFixedUpdate(int frameCount)
         {
 
-            TimeMsg currentExternalClockTimeEstimate = ScaledTimeEstimate.UpdateAndGetEstimation();
-            TimeMsg currentWallTimeEstimate = WallTimeOffsetEstimate.UpdateAndGetEstimation();
-
-            if (frameCountOfFixedUpdateTime != frameCount)
+            if (frameCountOfFixedUpdateTime == frameCount)
             {
-                //Only grab the first fixed update of the frame.
-                frameCountOfFixedUpdateTime = frameCount;
-                startTimeOfFrameExternalClock = currentExternalClockTimeEstimate;
+                return;
+            }
+            frameCountOfFixedUpdateTime = frameCount;
+
+            if (SyncWallTime)
+            {
+                TimeMsg currentWallTimeEstimate = WallTimeOffsetEstimate.UpdateAndGetEstimation();
                 startTimeOfFrameWall = currentWallTimeEstimate;
             }
+
+            if (SyncExternalClock)
+            {
+                TimeMsg currentExternalClockTimeEstimate = ScaledTimeEstimate.UpdateAndGetEstimation();
+                startTimeOfFrameExternalClock = currentExternalClockTimeEstimate;
+            }
+        }
+
+        private float GetFixedUpdateOffset(TimeMsg startTimeOfFrame, TimeMsg currentTimeOfFrame, int frameCount)
+        {
+
+            if (frameCount != frameCountOfFixedUpdateTime)
+            {
+                //Update was the first thing in this frame, assume no offset.
+                return 0f;
+            }
+
+            //There was a fixed update this frame, we can account for the additional delay processing the fixed update.
+            DurationMsg durationSinceStartOfFrameExternalClock = currentTimeOfFrame - startTimeOfFrame;
+            float secondsSinceStartOfFrame = (float) durationSinceStartOfFrameExternalClock.ToSec();
+            secondsSinceStartOfFrame = Mathf.Min(secondsSinceStartOfFrame, Time.maximumDeltaTime);
+            return secondsSinceStartOfFrame;
         }
 
         public void OnRegularUpdate(float unityTime, int frameCount)
         {
 
             _MaximumDeltaTime = Time.maximumDeltaTime;
-
-            TimeMsg scaledTimeExternalClock = ScaledTimeEstimate.UpdateAndGetEstimation();
-            TimeMsg scaledTimeWall = WallTimeOffsetEstimate.UpdateAndGetEstimation();
-
-            if (WallTimeTracker.AnyMessagesReceived)
-            {
-                wallTimeAtFrameStart = WallTimeTracker.GetCurrentEstimate(scaledTimeWall);
-            }
-            else
-            {
-                wallTimeAtFrameStart = GetEpochWallTime();
-            }
-
-            externalClockTimeAtFrameStart = ExternalClockTimeTracker.GetCurrentEstimate(scaledTimeExternalClock);
             measuredTimeOfFrameStartUnity = unityTime;
 
-            if (frameCount == frameCountOfFixedUpdateTime)
-            {
-                //There was a fixed update this frame, we can account for the additional delay processing the fixed update.
-                DurationMsg durationSinceStartOfFrameExternalClock = FromTo(startTimeOfFrameExternalClock, scaledTimeExternalClock);
-                float secondsSinceStartOfFrameExternalClock = (float) ToSec(durationSinceStartOfFrameExternalClock);
-                secondsSinceStartOfFrameExternalClock = Mathf.Min(secondsSinceStartOfFrameExternalClock, Time.maximumDeltaTime);
 
-                measuredTimeOfFrameStartUnity -= secondsSinceStartOfFrameExternalClock;
-                DurationMsg startOfFrameAddedDuration = FromSec(-secondsSinceStartOfFrameExternalClock);
-                wallTimeAtFrameStart = Add(wallTimeAtFrameStart, startOfFrameAddedDuration);
-                externalClockTimeAtFrameStart = Add(externalClockTimeAtFrameStart, startOfFrameAddedDuration);
+            if (SyncWallTime)
+            {
+                TimeMsg scaledTimeWall = WallTimeOffsetEstimate.UpdateAndGetEstimation();
+
+                if (WallTimeTracker.AnyMessagesReceived)
+                {
+                    wallTimeAtFrameStart = WallTimeTracker.GetCurrentEstimate(scaledTimeWall);
+                }
+                else
+                {
+                    wallTimeAtFrameStart = GetEpochWallTime();
+                }
+
+                float wallSecondsSinceStartOfFrame =
+                    GetFixedUpdateOffset(startTimeOfFrameWall, wallTimeAtFrameStart, frameCount);
+                unityTimeStartOfFrameWall = unityTime - wallSecondsSinceStartOfFrame;
+                wallTimeAtFrameStart -= DurationMsg.FromSec(wallSecondsSinceStartOfFrame);
             }
 
-        }
+            if (SyncExternalClock)
+            {
+                TimeMsg scaledTimeExternalClock = ScaledTimeEstimate.UpdateAndGetEstimation();
+                externalClockTimeAtFrameStart = ExternalClockTimeTracker.GetCurrentEstimate(scaledTimeExternalClock);
+                float clockSecondsSinceStartOfFrame =
+                    GetFixedUpdateOffset(startTimeOfFrameExternalClock, externalClockTimeAtFrameStart, frameCount);
+                unityTimeStartOfFrameExternalClock = unityTime - clockSecondsSinceStartOfFrame;
+                externalClockTimeAtFrameStart -= DurationMsg.FromSec(clockSecondsSinceStartOfFrame);
+            }
 
-        private DurationMsg GetUnityDurationSinceLastStoredTime(float unityTime)
-        {
-            float unitySecondsSinceLastStoredTime = unityTime - measuredTimeOfFrameStartUnity;
-            DurationMsg unityDurationSinceLastStoredTime = FromSec(unitySecondsSinceLastStoredTime);
-            return unityDurationSinceLastStoredTime;
         }
 
         public TimeMsg GetExternalSimulatedTime(float unityTime)
         {
-            DurationMsg offset = GetUnityDurationSinceLastStoredTime(unityTime);
-            TimeMsg result = Add(externalClockTimeAtFrameStart, offset);
+            DurationMsg offset = DurationMsg.FromSec(unityTime - unityTimeStartOfFrameExternalClock);
+            TimeMsg result = externalClockTimeAtFrameStart + offset;
             return result;
         }
 
         public TimeMsg GetRosWallTime(float unityTime)
         {
-            DurationMsg offset = GetUnityDurationSinceLastStoredTime(unityTime);
-            TimeMsg result = Add(wallTimeAtFrameStart, offset);
+            DurationMsg offset = DurationMsg.FromSec(unityTime - unityTimeStartOfFrameWall);
+            TimeMsg result = wallTimeAtFrameStart + offset;
             return result;
         }
 
@@ -216,101 +275,6 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
             return new TimeMsg((uint)secondsSinceEpoch, (uint)nanoSeconds);
 #endif
         }
-
-        public static DurationMsg FromTo(TimeMsg from, TimeMsg to)
-        {
-            int secDifference = ((int)to.sec) - ((int)from.sec);
-            int nanoSecondDifference = ((int)to.nanosec) - ((int)from.nanosec);
-            if (nanoSecondDifference < 0)
-            {
-                secDifference--;
-                nanoSecondDifference += 1000000000;
-            }
-#if ROS2
-            return new DurationMsg(secDifference, (uint) nanoSecondDifference);
-#else
-            return new DurationMsg(secDifference, nanoSecondDifference);
-#endif
-        }
-
-        public static DurationMsg Add(DurationMsg duration1, DurationMsg duration2)
-        {
-            int resultSecs = (duration1.sec + duration2.sec);
-            int resultNsecs = ((int)duration1.nanosec) + ((int)duration2.nanosec);
-            if (resultNsecs >= _NanoSecondsPerSecond)
-            {
-                resultSecs++;
-                resultNsecs -= _NanoSecondsPerSecond;
-            }
-#if ROS2
-            return new DurationMsg(resultSecs, (uint)resultNsecs);
-#else
-            return new DurationMsg(resultSecs, resultNsecs);
-#endif
-        }
-
-        public static TimeMsg Add(TimeMsg timeMsg, double addedSeconds)
-        {
-            return Add(timeMsg, FromSec(addedSeconds));
-        }
-
-        public static TimeMsg Add(TimeMsg timeMsg, DurationMsg addedDuration)
-        {
-            uint resultSecs = (uint) (timeMsg.sec + addedDuration.sec);
-            uint resultNsecs = timeMsg.nsecs + (uint)addedDuration.nanosec;
-            const uint _NanoSeconsPerSecond = 1000 * 1000 * 1000;
-            if (resultNsecs >= _NanoSeconsPerSecond)
-            {
-                resultNsecs -= _NanoSeconsPerSecond;
-                resultSecs += 1;
-            }
-#if ROS2
-            return new TimeMsg((int)resultSecs, resultNsecs);
-#else
-            return new TimeMsg(resultSecs, resultNsecs);
-#endif
-        }
-
-        public static TimeMsg Subtract(TimeMsg timeMsg, DurationMsg subtractedDuration)
-        {
-            int resultSecs = (int) timeMsg.sec - (int) subtractedDuration.sec;
-            int resultNsecs = (int) timeMsg.nsecs - (int) subtractedDuration.nanosec;
-            const int _NanoSeconsPerSecond = 1000 * 1000 * 1000;
-            if (resultNsecs < 0)
-            {
-                resultNsecs += _NanoSeconsPerSecond;
-                resultSecs -= 1;
-            }
-#if ROS2
-            return new TimeMsg((int)resultSecs, (uint) resultNsecs);
-#else
-            return new TimeMsg((uint)resultSecs, (uint) resultNsecs);
-#endif
-        }
-
-        public static double ToSec(DurationMsg durationMsg)
-        {
-            return durationMsg.sec + (durationMsg.nanosec* 0.000000001);
-        }
-
-        public static DurationMsg FromSec(double totalSeconds)
-        {
-            int totalSecondsInt = (int)totalSeconds;
-            double remainder = totalSeconds - totalSecondsInt;
-            if (remainder < 0)
-            {
-                totalSecondsInt--;
-                remainder = 1.0 + remainder;
-            }
-
-            uint remainderNanoSecondsInt = (uint) (remainder * 1e9);
-#if ROS2
-            return new DurationMsg(totalSecondsInt, remainderNanoSecondsInt);
-#else
-            return new DurationMsg(totalSecondsInt, (int)remainderNanoSecondsInt);
-#endif
-        }
-
 
     }
 }

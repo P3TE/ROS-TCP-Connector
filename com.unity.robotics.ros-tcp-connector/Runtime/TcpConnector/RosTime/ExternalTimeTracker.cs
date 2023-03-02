@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using RosMessageTypes.BuiltinInterfaces;
 using UnityEngine;
 
@@ -22,6 +23,8 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
         private readonly ScaledTimeEstimator scaledTimeEstimator;
 
         private TimeMsg lastReceivedTimeMessage = new TimeMsg(0, 0);
+
+        private object concurrencyLock = new object();
 
         public bool AnyMessagesReceived
         {
@@ -52,90 +55,95 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
         public void OnNewValueReceived(TimeMsg newTimeValue, bool jumpToNewValueRequested)
         {
 
-            if (AnyMessagesReceived &&
-                lastReceivedTimeMessage.sec == newTimeValue.sec &&
-                lastReceivedTimeMessage.nanosec == newTimeValue.nanosec &&
-                !jumpToNewValueRequested)
+            lock (concurrencyLock)
             {
-                //Nothing has changed.
-                return;
-            }
-            lastReceivedTimeMessage = newTimeValue;
 
-            bool jumpToNewValue = false;
-
-            if (!AnyMessagesReceived)
-            {
-                AnyMessagesReceived = true;
-                jumpToNewValue = true;
-            }
-
-            TimeMsg currentScaledTimeEstimate = scaledTimeEstimator.UpdateAndGetEstimation();
-
-            // Calculate what we thought the correct time would be.
-            TimeMsg ourCurrentEstimate = GetCurrentEstimate(currentScaledTimeEstimate);
-
-            // Using 'newTimeValue' determine how far off we were.
-            DurationMsg fromOurEstimateToNewMessage = RosTimeHelper.FromTo(ourCurrentEstimate, newTimeValue);
-            double fromOurEstimateToNewMessageSeconds = RosTimeHelper.ToSec(fromOurEstimateToNewMessage);
-            if (jumpToNewValueRequested)
-            {
-                bool smallReverseTimeJump = (fromOurEstimateToNewMessageSeconds < 0) &&
-                                            (fromOurEstimateToNewMessageSeconds > -_MaximumSecondsBehindInJumpRequestNotToJump);
-                //If there's jump requested but the amount is small and a reverse time jump, instead don't jump
-                if (!smallReverseTimeJump)
+                if (AnyMessagesReceived &&
+                    lastReceivedTimeMessage.sec == newTimeValue.sec &&
+                    lastReceivedTimeMessage.nanosec == newTimeValue.nanosec &&
+                    !jumpToNewValueRequested)
                 {
+                    //Nothing has changed.
+                    return;
+                }
+
+                lastReceivedTimeMessage = newTimeValue;
+
+                bool jumpToNewValue = false;
+
+                if (!AnyMessagesReceived)
+                {
+                    AnyMessagesReceived = true;
                     jumpToNewValue = true;
                 }
-            }
-            if (fromOurEstimateToNewMessageSeconds > _MaximumSecondsBehindBeforeJumpForward)
-            {
-                // Jump immediately forward to the received value.
-                jumpToNewValue = true;
-            } else if (fromOurEstimateToNewMessageSeconds < -_MaximumSecondsAheadBeforeJumpBackward)
-            {
-                Debug.LogWarning($"Jumping back in time! fromOurEstimateToNewMessageSeconds = {fromOurEstimateToNewMessageSeconds}");
-                // Jump immediately backward to the received value.
-                jumpToNewValue = true;
-            } else
-            {
-                // We aren't too far off, stay with the current estimate and update
-                // the direction we are steering.
-                latestTimeEstimate = ourCurrentEstimate;
-                goalErrorAddedSeconds = fromOurEstimateToNewMessageSeconds;
-            }
 
-            if (jumpToNewValue)
-            {
-                // We are REALLY far off
-                // Jump immediately to the received value.
-                latestTimeEstimate = newTimeValue;
-                goalErrorAddedSeconds = 0.0;
-            }
-            else
-            {
-                // We aren't too far off, stay with the current estimate and update
-                // the direction we are steering.
-                latestTimeEstimate = ourCurrentEstimate;
-                goalErrorAddedSeconds = fromOurEstimateToNewMessageSeconds;
-            }
+                TimeMsg currentScaledTimeEstimate = scaledTimeEstimator.UpdateAndGetEstimation();
 
-            lastRecordedTimeScaledTimeEstimate = currentScaledTimeEstimate;
-            AnyMessagesReceived = true;
+                // Calculate what we thought the correct time would be.
+                TimeMsg ourCurrentEstimate = GetCurrentEstimateNoConcurrencyChecks(currentScaledTimeEstimate);
+
+                // Using 'newTimeValue' determine how far off we were.
+                DurationMsg fromOurEstimateToNewMessage = newTimeValue - ourCurrentEstimate;
+                double fromOurEstimateToNewMessageSeconds = fromOurEstimateToNewMessage.ToSec();
+                if (jumpToNewValueRequested)
+                {
+                    bool smallReverseTimeJump = (fromOurEstimateToNewMessageSeconds < 0) &&
+                                                (fromOurEstimateToNewMessageSeconds >
+                                                 -_MaximumSecondsBehindInJumpRequestNotToJump);
+                    //If there's jump requested but the amount is small and a reverse time jump, instead don't jump
+                    if (!smallReverseTimeJump)
+                    {
+                        jumpToNewValue = true;
+                    }
+                }
+
+                if (fromOurEstimateToNewMessageSeconds > _MaximumSecondsBehindBeforeJumpForward)
+                {
+                    // Jump immediately forward to the received value.
+                    jumpToNewValue = true;
+                }
+                else if (fromOurEstimateToNewMessageSeconds < -_MaximumSecondsAheadBeforeJumpBackward)
+                {
+                    Debug.LogWarning(
+                        $"Jumping back in time! fromOurEstimateToNewMessageSeconds = {fromOurEstimateToNewMessageSeconds}");
+                    // Jump immediately backward to the received value.
+                    jumpToNewValue = true;
+                }
+                else
+                {
+                    // We aren't too far off, stay with the current estimate and update
+                    // the direction we are steering.
+                    latestTimeEstimate = ourCurrentEstimate;
+                    goalErrorAddedSeconds = fromOurEstimateToNewMessageSeconds;
+                }
+
+                if (jumpToNewValue)
+                {
+                    // We are REALLY far off
+                    // Jump immediately to the received value.
+                    latestTimeEstimate = newTimeValue;
+                    goalErrorAddedSeconds = 0.0;
+                }
+                else
+                {
+                    // We aren't too far off, stay with the current estimate and update
+                    // the direction we are steering.
+                    latestTimeEstimate = ourCurrentEstimate;
+                    goalErrorAddedSeconds = fromOurEstimateToNewMessageSeconds;
+                }
+
+                lastRecordedTimeScaledTimeEstimate = currentScaledTimeEstimate;
+                AnyMessagesReceived = true;
+
+            }
         }
 
-
-        public TimeMsg GetCurrentEstimate(TimeMsg scaledTimeEstimate = null)
+        private TimeMsg GetCurrentEstimateNoConcurrencyChecks(TimeMsg scaledTimeEstimate)
         {
-            if (scaledTimeEstimate == null)
-            {
-                scaledTimeEstimate = scaledTimeEstimator.UpdateAndGetEstimation();
-            }
-
             //Calculate the time elapsed since the last received message.
             DurationMsg timeSinceLastReceivedValue =
-                RosTimeHelper.FromTo(lastRecordedTimeScaledTimeEstimate, scaledTimeEstimate);
-            double timeSinceLastReceivedValueSeconds = RosTimeHelper.ToSec(timeSinceLastReceivedValue);
+                scaledTimeEstimate - lastRecordedTimeScaledTimeEstimate;
+            double timeSinceLastReceivedValueSeconds = timeSinceLastReceivedValue.ToSec();
 
             // Compensate for errors in estimation by moving towards the current goal value.
             double absoluteCompensationChange =
@@ -158,23 +166,37 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
                 compensationChangeSeconds = Math.Max(removedTime, goalErrorAddedSeconds);
             }
 
-            DurationMsg compensationChange = RosTimeHelper.FromSec(compensationChangeSeconds);
+            DurationMsg compensationChange = DurationMsg.FromSec(compensationChangeSeconds);
 
-            DurationMsg totalAddedTime = RosTimeHelper.Add(timeSinceLastReceivedValue, compensationChange);
+            DurationMsg totalAddedTime = timeSinceLastReceivedValue + compensationChange;
 
             // When attempting to go back in time, allow time to progress forward but by a smaller amount
-            double totalAddedTimeSeconds = RosTimeHelper.ToSec(totalAddedTime);
+            double totalAddedTimeSeconds = totalAddedTime.ToSec();
             double minimumAllowedTotalSeconds = _SmallestMultipleTimeStep * timeSinceLastReceivedValueSeconds;
             totalAddedTimeSeconds = Math.Max(totalAddedTimeSeconds, minimumAllowedTotalSeconds);
-            totalAddedTime = RosTimeHelper.FromSec(totalAddedTimeSeconds);
+            totalAddedTime = DurationMsg.FromSec(totalAddedTimeSeconds);
 
             if (totalAddedTime.sec == 0 && totalAddedTime.nanosec == 0)
             {
                 totalAddedTime.nanosec = 1;
             }
 
-            TimeMsg currentEstimate = RosTimeHelper.Add(latestTimeEstimate, totalAddedTime);
+            TimeMsg currentEstimate = latestTimeEstimate + totalAddedTime;
             return currentEstimate;
+        }
+
+
+        public TimeMsg GetCurrentEstimate(TimeMsg scaledTimeEstimate = null)
+        {
+            lock (concurrencyLock)
+            {
+                if (scaledTimeEstimate == null)
+                {
+                    scaledTimeEstimate = scaledTimeEstimator.UpdateAndGetEstimation();
+                }
+
+                return GetCurrentEstimateNoConcurrencyChecks(scaledTimeEstimate);
+            }
         }
 
     }

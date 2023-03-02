@@ -14,6 +14,8 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
         private DateTime timeOfLastEstimationUpdate = DateTime.Now;
         private bool setupPerformed = false;
 
+        private object concurrencyLock = new object();
+
         public virtual float TimeScale => _timeScale;
 
         public virtual bool IsPaused => _isPaused;
@@ -29,25 +31,34 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
 
         public TimeMsg UpdateAndGetEstimation()
         {
-            if (!setupPerformed) PerformSetup();
-
-            DateTime now = DateTime.Now;
-            if (!IsPaused && TimeScale > 0)
+            TimeMsg result;
+            lock (concurrencyLock)
             {
-                TimeSpan timeSinceLastUpdate = now - timeOfLastEstimationUpdate;
-                double totalSecondsSinceLastUpdate = timeSinceLastUpdate.TotalSeconds;
-                if (totalSecondsSinceLastUpdate > MaximumDeltaTime)
-                {
-                    //Add a limit to the amount estimation can progress in a single update.
-                    totalSecondsSinceLastUpdate = MaximumDeltaTime;
-                }
-                double scaledPassedTime = totalSecondsSinceLastUpdate * TimeScale;
-                DurationMsg asDurationMessage = RosTimeHelper.FromSec(scaledPassedTime);
-                timeEstimate = RosTimeHelper.Add(timeEstimate, asDurationMessage);
-            }
+                if (!setupPerformed) PerformSetup();
 
-            timeOfLastEstimationUpdate = now;
-            return timeEstimate;
+                bool isPaused = IsPaused;
+                float timeScale = TimeScale;
+
+                DateTime now = DateTime.Now;
+                if (!isPaused && timeScale > 0)
+                {
+                    TimeSpan timeSinceLastUpdate = now - timeOfLastEstimationUpdate;
+                    double totalSecondsSinceLastUpdate = timeSinceLastUpdate.TotalSeconds;
+                    if (totalSecondsSinceLastUpdate > MaximumDeltaTime)
+                    {
+                        //Add a limit to the amount estimation can progress in a single update.
+                        totalSecondsSinceLastUpdate = MaximumDeltaTime;
+                    }
+
+                    double scaledPassedTime = totalSecondsSinceLastUpdate * timeScale;
+                    DurationMsg asDurationMessage = DurationMsg.FromSec(scaledPassedTime);
+                    timeEstimate = timeEstimate + asDurationMessage;
+                }
+
+                timeOfLastEstimationUpdate = now;
+                result = timeEstimate;
+            }
+            return result;
         }
 
         public void UpdateTimeParameters(float newTimeScale, bool newIsPaused)
