@@ -8,6 +8,9 @@ namespace RosMessageTypes.BuiltinInterfaces
 {
     public class DurationMsg : Message
     {
+
+        public const int _NanoSecondsPerSecond = 1000 * 1000 * 1000;
+
 #if !ROS2
         public const string k_RosMessageName = "builtin_interfaces/Duration";
         public override string RosMessageName => k_RosMessageName;
@@ -82,6 +85,45 @@ namespace RosMessageTypes.BuiltinInterfaces
         public static void Register()
         {
             MessageRegistry.Register(k_RosMessageName, Deserialize);
+        }
+
+        public static DurationMsg operator +(DurationMsg duration1, DurationMsg duration2)
+        {
+            int resultSecs = (duration1.sec + duration2.sec);
+            int resultNsecs = ((int)duration1.nanosec) + ((int)duration2.nanosec);
+            if (resultNsecs >= _NanoSecondsPerSecond)
+            {
+                resultSecs++;
+                resultNsecs -= _NanoSecondsPerSecond;
+            }
+#if ROS2
+            return new DurationMsg(resultSecs, (uint)resultNsecs);
+#else
+            return new DurationMsg(resultSecs, resultNsecs);
+#endif
+        }
+
+        public double ToSec()
+        {
+            return sec + (nanosec * 0.000000001);
+        }
+
+        public static DurationMsg FromSec(double totalSeconds)
+        {
+            int totalSecondsInt = (int)totalSeconds;
+            double remainder = totalSeconds - totalSecondsInt;
+            if (remainder < 0)
+            {
+                totalSecondsInt--;
+                remainder = 1.0 + remainder;
+            }
+
+            uint remainderNanoSecondsInt = (uint) (remainder * 1e9);
+#if ROS2
+            return new DurationMsg(totalSecondsInt, remainderNanoSecondsInt);
+#else
+            return new DurationMsg(totalSecondsInt, (int)remainderNanoSecondsInt);
+#endif
         }
     }
 }
