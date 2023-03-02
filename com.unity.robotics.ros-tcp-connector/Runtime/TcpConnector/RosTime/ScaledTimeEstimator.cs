@@ -52,7 +52,7 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
 
                     double scaledPassedTime = totalSecondsSinceLastUpdate * timeScale;
                     DurationMsg asDurationMessage = DurationMsg.FromSec(scaledPassedTime);
-                    timeEstimate = timeEstimate + asDurationMessage;
+                    timeEstimate += asDurationMessage;
                 }
 
                 timeOfLastEstimationUpdate = now;
