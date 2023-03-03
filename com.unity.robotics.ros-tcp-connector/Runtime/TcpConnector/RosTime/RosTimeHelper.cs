@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using RosMessageTypes.BuiltinInterfaces;
+using RosMessageTypes.Std;
 using UnityEngine;
 
 namespace Unity.Robotics.ROSTCPConnector.RosTime
@@ -148,7 +149,12 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
 
             if (SyncWallTime)
             {
+                #if ROS2
+                TimeMsg receivedWallTime = new TimeMsg((int)sysCommandClockInfo.wall_secs, sysCommandClockInfo.wall_nsecs);
+                #else
                 TimeMsg receivedWallTime = new TimeMsg(sysCommandClockInfo.wall_secs, sysCommandClockInfo.wall_nsecs);
+                #endif
+
                 WallTimeOffsetEstimate.UpdateTimeParameters(sysCommandClockInfo.time_scale, sysCommandClockInfo.is_paused);
                 WallTimeTracker.OnNewValueReceived(receivedWallTime, false);
             }
@@ -158,7 +164,11 @@ namespace Unity.Robotics.ROSTCPConnector.RosTime
 
                 ScaledTimeEstimate.UpdateTimeParameters(sysCommandClockInfo.time_scale, sysCommandClockInfo.is_paused);
 
+                #if ROS2
+                TimeMsg receivedClockTime = new TimeMsg((int)sysCommandClockInfo.clock_secs, sysCommandClockInfo.clock_nsecs);
+                #else
                 TimeMsg receivedClockTime = new TimeMsg(sysCommandClockInfo.clock_secs, sysCommandClockInfo.clock_nsecs);
+                #endif
 
                 bool resetClockTime = sysCommandClockInfo.should_reset_clock_time
                                       || IsPaused != sysCommandClockInfo.is_paused; //A change in paused state.
