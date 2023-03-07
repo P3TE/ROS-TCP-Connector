@@ -211,6 +211,18 @@ public class TFSystem
         return GetTransform(frame_id, time.ToLongTime(), tfTopic);
     }
 
+    public static bool TryLookupRelativeTransform(out TFFrame result, string fromFrameId, string toFrameId, TimeMsg time, string tfTopic = "/tf")
+    {
+        TFStream stream = GetTransformStream(toFrameId, tfTopic);
+        if (stream == null)
+        {
+            result = TFFrame.identity;
+            return false;
+        }
+        //TryGetRelativeTF
+        return stream.TryGetRelativeTF(out result, fromFrameId, time);
+    }
+
     public static TFFrame LookupRelativeTransform(string fromFrameId, string toFrameId, TimeMsg time, bool fallbackToIdentity = false, string tfTopic = "/tf")
     {
         TFStream stream = GetTransformStream(toFrameId, tfTopic);

@@ -237,22 +237,38 @@ public class TFStream
         return GetWorldTF(time.ToLongTime());
     }
 
-    public TFFrame GetRelativeTF(string from, long time = 0, bool fallbackToIdentity = false)
+    public bool TryGetRelativeTF(out TFFrame result, string from, long time = 0)
     {
         if (Parent == null)
         {
-            if (fallbackToIdentity)
-            {
-                return TFFrame.identity;
-            }
-            throw new Exception($"Unable to find transform '{from}' in tf tree");
+            result = TFFrame.identity;
+            return false;
         }
 
         if (Parent.Name == from)
         {
-            return GetLocalTF(time);
+            result = GetLocalTF(time);
         }
-        return Parent.GetRelativeTF(from, time).Compose(GetLocalTF(time));
+        else
+        {
+            result = Parent.GetRelativeTF(from, time).Compose(GetLocalTF(time));
+        }
+        return true;
+    }
+
+    public bool TryGetRelativeTF(out TFFrame result, string from, TimeMsg time)
+    {
+        return TryGetRelativeTF(out result, from, time.ToLongTime());
+    }
+
+    public TFFrame GetRelativeTF(string from, long time = 0, bool fallbackToIdentity = false)
+    {
+        bool lookupSuccess = TryGetRelativeTF(out TFFrame result, from, time);
+        if (!lookupSuccess && !fallbackToIdentity)
+        {
+            throw new Exception($"Unable to find transform '{from}' in tf tree");
+        }
+        return result;
     }
 
     public TFFrame GetRelativeTF(string from, TimeMsg time, bool fallbackToIdentity = false)
