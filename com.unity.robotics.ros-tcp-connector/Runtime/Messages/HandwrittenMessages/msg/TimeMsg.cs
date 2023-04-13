@@ -167,5 +167,13 @@ namespace RosMessageTypes.BuiltinInterfaces
             return new TimeMsg((uint)resultSecs, (uint) resultNsecs);
 #endif
         }
+
+        public double ToSec()
+        {
+            const int _NanoSeconsPerSecond = 1000 * 1000 * 1000;
+            double result = sec;
+            result += ((double)nanosec) / ((double)_NanoSeconsPerSecond);
+            return result;
+        }
     }
 }
