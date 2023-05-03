@@ -706,6 +706,17 @@ namespace Unity.Robotics.ROSTCPConnector
         {
             s_RealTimeSinceStartup = Time.realtimeSinceStartup;
 
+            ConnectionThreadState currentConnectionState = connectionThreadData == null
+                ? ConnectionThreadState.NotConnected
+                : connectionThreadData.ConnectionState;
+
+            if(m_lastBroatcastConnectionState != currentConnectionState)
+            {
+                //Update everything listening for an update to the connection state.
+                m_lastBroatcastConnectionState = currentConnectionState;
+                connectionThreadStateUpdatedDelegate?.Invoke(m_lastBroatcastConnectionState);
+            }
+
             if (connectionThreadData == null)
             {
                 // Not connected
@@ -716,13 +727,6 @@ namespace Unity.Robotics.ROSTCPConnector
             if (connectionThreadData.ConnectionState == ConnectionThreadState.NotConnected)
             {
                 ClearMessageQueue(connectionThreadData.OutgoingQueue);
-            }
-
-            if(m_lastBroatcastConnectionState != connectionThreadData.ConnectionState)
-            {
-                //Update everything listening for an update to the connection state.
-                m_lastBroatcastConnectionState = connectionThreadData.ConnectionState;
-                connectionThreadStateUpdatedDelegate?.Invoke(m_lastBroatcastConnectionState);
             }
 
             EndpointMessageContents data;
