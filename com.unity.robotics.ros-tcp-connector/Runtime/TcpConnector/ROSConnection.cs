@@ -1234,8 +1234,12 @@ namespace Unity.Robotics.ROSTCPConnector
             byte[] readBuffer = new byte[full_message_size];
             await ReadToByteArray(networkStream, readBuffer, full_message_size, sleepMilliseconds, token);
 
+#if !ROS2
             await ReadToByteArray(networkStream, s_WasLatched, 1, sleepMilliseconds, token);
             bool wasLatched = BitConverter.ToBoolean(s_WasLatched);
+#else
+            bool wasLatched = false; //TODO ROS2 latching replacement
+#endif
 
             return new EndpointMessageContents(topicName, readBuffer, wasLatched);
         }
