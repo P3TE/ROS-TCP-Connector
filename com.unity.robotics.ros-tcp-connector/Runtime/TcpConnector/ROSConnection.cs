@@ -109,6 +109,8 @@ namespace Unity.Robotics.ROSTCPConnector
         readonly ConcurrentQueue<EndpointMessageContents> m_IncomingMessages = new();
 
         private ConnectionThreadData connectionThreadData = null;
+        private Task connectionThreadTask = null;
+        private static ConcurrentQueue<Task> tasksForMainThreadQueue = new ConcurrentQueue<Task>();
 
         public bool HasConnectionThread => connectionThreadData != null;
 
@@ -638,7 +640,7 @@ namespace Unity.Robotics.ROSTCPConnector
                 new CancellationTokenSource(),
                 showConnectionFailedWarning
             );
-            Task.Run(() => ConnectionThread(connectionThreadData));
+            connectionThreadTask = Task.Run(() => ConnectionThread(connectionThreadData));
         }
 
         // NB this callback is not running on the main thread, be cautious about modifying data here
@@ -764,6 +766,22 @@ namespace Unity.Robotics.ROSTCPConnector
                 {
                     Debug.LogException(e);
                 }
+            }
+
+            while (tasksForMainThreadQueue.TryDequeue(out Task mainThreadTask))
+            {
+                mainThreadTask.RunSynchronously();
+            }
+
+            if (connectionThreadTask != null && connectionThreadTask.Status == TaskStatus.Faulted)
+            {
+                Debug.LogError("Connection thread faulted! Attempting reconnect.");
+                if (connectionThreadTask.Exception != null)
+                {
+                    Debug.LogError(connectionThreadTask.Exception);
+                }
+
+                Connect();
             }
         }
 
@@ -1040,11 +1058,8 @@ namespace Unity.Robotics.ROSTCPConnector
                     connectionInfo.IncrementReaderIdx();
                     _ = Task.Run(() => ReaderThread(connectionInfo, readerCancellation.Token));
 
-                    if (m_HasOutputConnectionError)
-                    {
-                        Debug.Log($"ROS Connection to {connectionInfo.RosIPAddress}:{connectionInfo.RosPort} succeeded!");
-                        m_HasOutputConnectionError = false;
-                    }
+                    Debug.Log($"ROS Connection to {connectionInfo.RosIPAddress}:{connectionInfo.RosPort} succeeded!");
+                    m_HasOutputConnectionError = false;
 
                     // connected, now just watch our queue for outgoing messages to send (or else send a keepalive message occasionally)
                     float waitingSinceRealTime = s_RealTimeSinceStartup;
@@ -1141,9 +1156,14 @@ namespace Unity.Robotics.ROSTCPConnector
                     if (client != null)
                         client.Close();
 
-                    // clear the message queue
-                    ClearMessageQueue(connectionInfo.OutgoingQueue);
-                    connectionInfo.DeregisterAll(connectionEndedUnexpectedly);
+                    // Clear the message queue on the main thread.
+                    Task mainThreadTask = new Task(() =>
+                    {
+                        ClearMessageQueue(connectionInfo.OutgoingQueue);
+                        connectionInfo.DeregisterAll(connectionEndedUnexpectedly);
+                    });
+                    tasksForMainThreadQueue.Enqueue(mainThreadTask);
+                    await mainThreadTask;
                 }
                 await Task.Yield();
             }
