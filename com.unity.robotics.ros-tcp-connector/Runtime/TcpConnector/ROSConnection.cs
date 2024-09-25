@@ -770,7 +770,14 @@ namespace Unity.Robotics.ROSTCPConnector
 
             while (tasksForMainThreadQueue.TryDequeue(out Task mainThreadTask))
             {
-                mainThreadTask.RunSynchronously();
+                try
+                {
+                    mainThreadTask.RunSynchronously();
+                }
+                catch (Exception e)
+                {
+                    Debug.LogException(e);
+                }
             }
 
             if (connectionThreadTask != null && connectionThreadTask.Status == TaskStatus.Faulted)
